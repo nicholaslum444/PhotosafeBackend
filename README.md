@@ -2,10 +2,10 @@
 A repo housing our server-side code.
 
 # Setup
-Node version: v6.10.2
-Required ports: 1880, 1881
-Landing page url: http://photosafe.tk
-API url: http://api.photosafe.tk
+* Node version: v6.10.2
+* Required ports: 1880, 1881
+* Landing page url: http://photosafe.tk
+* API url: http://api.photosafe.tk
 
 Landing page is likely to be a static page. If not, it will take port 1880. The assumption here on is that it is a static page. If port is used, then follow similar instructions to the API server.
 
