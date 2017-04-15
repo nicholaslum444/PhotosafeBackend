@@ -7,6 +7,8 @@ A repo housing our server-side code.
 * Landing page url: http://photosafe.tk
 * API url: http://api.photosafe.tk
 
+Dependencies should already be saved in package.json. Run `npm install` to install dependencies. Run `node server.js` to start the app.
+
 Landing page is likely to be a static page. If not, it will take port 1880. The assumption here on is that it is a static page. If port is used, then follow similar instructions to the API server.
 
 Separate repo for landing page should be made soon and these instructions should be there instead.
