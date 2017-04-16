@@ -19,6 +19,8 @@
   "homepage": "https://github.com/nifemim/PhotoSafeBackend#readme",
   "dependencies": {
     "body-parser": "^1.17.1",
-    "express": "^4.15.2"
+    "express": "^4.15.2",
+    "multer": "^1.3.0",
+    "nodemon": "^1.11.0"
   }
 }
