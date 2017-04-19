@@ -1,3 +1,6 @@
+# custom
+uploads/tmp/*
+
 # Logs
 logs
 *.log
