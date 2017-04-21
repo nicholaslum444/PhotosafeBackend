@@ -17,12 +17,13 @@ var passport = require('passport');
 var GoogleStrategy = require('passport-google-oauth').OAuth2Strategy;
 
 //Establish MySQL DB
+var config = require('./config');
 var mysql = require('mysql');
 var connection = mysql.createConnection({
-  host     : 'localhost',
-  user     : 'root',
-  password : 'password',
-  database : 'photosafe'
+  host     : config.db.host,
+  user     : config.db.user,
+  password : config.db.password,
+  database : config.db.database
 });
 connection.connect();
 connection.query('CREATE TABLE IF NOT EXISTS users (googleID VARCHAR(255) NOT NULL, firstName VARCHAR(255), email VARCHAR(255));');
