@@ -16,12 +16,17 @@ var multer = require('multer');
 
 // resemble.js
 var resemble = require('node-resemble-js');
+var sharp = require('sharp');
 
 // request to get image from urls
 var req = require('request');
 
 // filesystem
 var fs = require('fs');
+
+// for detecting file type
+var readChunk = require('read-chunk');
+var fileType = require('file-type');
 
 // --- BINDINGS ---
 
@@ -31,9 +36,9 @@ app.use(bodyParser.json({limit:IMAGE_SIZE_LIMIT}));
 
 var upload = multer({ 'dest': __dirname + '/uploads/tmp' });
 
-resemble.outputSettings({
-    largeImageThreshold: 0
-});
+// resemble.outputSettings({
+//     largeImageThreshold: 0
+// });
 
 // --- ROUTES ---
 
@@ -326,12 +331,8 @@ function updateSettingsHandler(request, response) {
 
 // --- HELPER FUNCTIONS ---
 
-// TODO implement permission check for images
-function hasPermission(username, imageKey) {
-    return true;
-}
-
-// TODO implement comparision for image
+// downloads the image at the url and compares it against the user's blacklist
+// returning the response via apiResponse
 function downloadAndCompare(imageUrl, username, apiResponse) {
     
     // download image
@@ -349,87 +350,156 @@ function downloadAndCompare(imageUrl, username, apiResponse) {
         return sendCompareResponse(apiResponse, null, err.message);
     });
     
-    var downloadedFilepath = 'compare/' + createTemporaryFilename() + '.png';
-    
+    // write the image to file, without extension
+    ensureDirectorySync('compare');
+    var downloadedFilepath = 'compare/' + createTemporaryFilename();
     var downloadedFile = fs.createWriteStream(downloadedFilepath);
-
     imageDownload.pipe(downloadedFile);
-
-    downloadedFile.on('error', function(err) { // Handle errors
-        fs.unlink(downloadedFilepath); // Delete the file async. (But we don't check the result)
+    
+    // Handle errors
+    downloadedFile.on('error', function(err) { 
+        fs.unlinkSync(downloadedFilepath);
         return sendCompareResponse(apiResponse, null, err.message);
     });
-
+    
+    // carry out comparision if no errors
     downloadedFile.on('finish', function() {
-        downloadedFile.close(compare(downloadedFilepath, username, apiResponse));  // close() is async, call cb after close completes.
+        // close the stream
+        downloadedFile.close()
+            
+        // rename the downloaded file to its proper extension
+        var fileExtension = getImageFileExtension(downloadedFilepath);
+        var downloadedFilepathExt = downloadedFilepath + "." + fileExtension;
+        fs.renameSync(downloadedFilepath, downloadedFilepathExt);
+        console.log(downloadedFilepathExt);
+        
+        // compare
+        compare(downloadedFilepathExt, username, apiResponse);
+    });
+}
+
+// compares the given image (at the path) to the username's blacklist
+// then returns the response via apiResponse
+function compare(downloadedFilepath, username, apiResponse) {
+    // get the images to compare against
+    var blacklistImageKeys = getUserBlacklistKeys(username);
+    var blacklistImagePaths = blacklistImageKeys.map(getBlacklistImagePath);
+    
+    // results of the comparisions in promise form
+    var promises = [];
+    blacklistImagePaths.forEach(function(imagePath) {
+        promises.push(resemblePromise(downloadedFilepath, imagePath.path, imagePath.key));
     });
     
-    // return [{
-    //     image_key: '78e67d8f9a569db686c54c8e67.jpg',
-    //     similarity: 0.9
-    // },{
-    //     image_key: '88e6769db686d8f9a5c54c8e67.jpg',
-    //     similarity: 0.2
-    // }];
-}
-
-function compare(downloadedFilepath, username, apiResponse) {
-    return function() {
-        console.log(downloadedFilepath);
-        var blacklistImageKeys = getUserBlacklistKeys(username);
-        var blacklistImagePaths = blacklistImageKeys.map(getBlacklistImagePath);
-        var promises = [];
+    // once comparisions are done, prepare info for response
+    Promise.all(promises).then(function(promiseResults) {
+        // console.log(promiseResults);
+        var similarityInfos = promiseResults.map(function(result) {
+            // console.log(result.data);
+            var misMatchPercentage = parseFloat(result.data.misMatchPercentage);
+            var similarity = (100.0 - misMatchPercentage) / 100.0;
+            var similarityInfo = {image_key: result.key, similarity: similarity}
+            console.log(similarityInfo);
+            return similarityInfo;
+        });
+        console.log(similarityInfos);
+        // delete the new files
+        fs.unlink(getResizedFilePath(downloadedFilepath));
         blacklistImagePaths.forEach(function(imagePath) {
-            promises.push(resemblePromise(downloadedFilepath, imagePath.path, imagePath.key));
+            fs.unlink(getResizedFilePath(imagePath.path));
         });
-        Promise.all(promises).then(function(promiseResults) {
-            console.log(promiseResults);
-            var similarityInfos = promiseResults.map(function(result) {
-                console.log(result.data);
-                var misMatchPercentage = parseFloat(result.data.misMatchPercentage);
-                var similarity = (100.0 - misMatchPercentage) / 100.0;
-                var similarityInfo = {image_key: result.key, similarity: similarity}
-                console.log(similarityInfo);
-                return similarityInfo;
-            });
-            console.log(similarityInfos);
-            sendCompareResponse(apiResponse, similarityInfos, null)
-        });
-    };
+        
+        // send response
+        sendCompareResponse(apiResponse, similarityInfos, null)
+    });
 }
 
+// converts the callback version of the resemble js image compare to a promise
+// resize both images to 500px width before comparing. this reduces false positives
+// TODO ensure that when uploading image for blacklist, the image is auto resized to 500 width
 function resemblePromise(downloadedFilepath, imagePath, imageKey) {
     return new Promise(function(resolve, reject) {
         console.log(imagePath);
-        resemble(downloadedFilepath).compareTo(imagePath).ignoreColors().onComplete(function(data) {
-            console.log(data);
-            resolve({data:data, key:imageKey})
+        
+        // resize images since we can't confirm it's already resized
+        var resizedDownloadedFilePath = getResizedFilePath(downloadedFilepath);
+        var resizedImagePath = getResizedFilePath(imagePath);
+        
+        // carry out both resize as promises
+        var resizedImages = [];
+        resizedImages.push(sharp(downloadedFilepath).resize(500).toFile(resizedDownloadedFilePath));
+        resizedImages.push(sharp(imagePath).resize(500).toFile(resizedImagePath));
+        console.log(resizedImages);
+        
+        // compare resized image after promise returns
+        Promise.all(resizedImages).then(function(resizedImageResults) {
+            console.log(resizedImageResults);
+            try {
+                var diff = resemble(resizedDownloadedFilePath).compareTo(resizedImagePath).onComplete(function(data) {
+                    console.log(data);
+                    // return the comparision data
+                    resolve({data:data, key:imageKey})
+                });
+            } catch (e) {
+                resolve({error:e, data:{misMatchPercentage:'1'}, key: imageKey});
+            }
         });
     });
 }
 
+// sends a json response via the response object
 function sendCompareResponse(response, similarityInfo, error) {
     var responseObj = createResponseObj('success', similarityInfo);
     response.json(responseObj);
     return;
 }
 
+// ensure directory exists
+function ensureDirectorySync(directory) {  
+    try {
+        fs.statSync(directory);
+    } catch(e) {
+        fs.mkdirSync(directory);
+    }
+}
+
+// gets the filepath of the resized image
+function getResizedFilePath(filepath) {
+    console.log(filepath);
+    var split = filepath.split('.');
+    return split[0] + '-re.' + split[1];
+}
+
+// creates a random filename 
 function createTemporaryFilename() {
     return 'tempfile' + getRandomInt(0, 100000000);
 }
 
+// generates a random integer in a range
 function getRandomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+// returns the proper file extension of the file
+function getImageFileExtension(imageFilepath) {
+    const buffer = readChunk.sync(imageFilepath, 0, 4100);
+    var ext = fileType(buffer).ext;
+    return ext;
+}
+
+// TODO implement permission check for images
+function hasPermission(username, imageKey) {
+    return true;
+}
+
 // TODO implement get blacklist image paths
 function getBlacklistImagePath(imageKey) {
-    if (imageKey === 'asd') {
-        return {key:imageKey, path:'uploads/noimg.jpg'};
-    } else if (imageKey === 'zxc') {
+    if (imageKey === 'poster') {
+        return {key:imageKey, path:'uploads/poster.jpg'};
+    } else if (imageKey === 'test') {
         return {key:imageKey, path:'uploads/test.jpg'};
-    } else if (imageKey === 'qwe') {
-        return {key:imageKey, path:'uploads/npm.png'};
+    } else if (imageKey === 'soccer') {
+        return {key:imageKey, path:'uploads/soccer.jpg'};
     }
 }
 
@@ -475,7 +545,7 @@ function addImageFileToBlacklist(file) {
 
 // TODO implement get blacklist of user
 function getUserBlacklistKeys(username) {
-    return ['asd', 'qwe', 'zxc']
+    return ['soccer', 'test', 'poster']
 }
 
 // TODO check if image key is valid

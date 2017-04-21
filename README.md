@@ -24,3 +24,6 @@ Set apache/nginx to route http://photosafe.tk to the folder where the landing pa
 Set apache/nginx to route http://api.photosafe.tk to localhost port 1881, i.e. http://127.0.0.1:1881
 
 This guide was followed: https://www.digitalocean.com/community/tutorials/how-to-set-up-a-node-js-application-for-production-on-ubuntu-14-04
+
+## Notes
+If you encounter node-gyp error on Windows, download Visual C++ Build Tools 2015 and then run `npm config set msvs_version 2015`. Now node-gyp should work.
