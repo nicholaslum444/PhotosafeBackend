@@ -92,11 +92,11 @@ passport.use(new GoogleStrategy({
 }));
 
 passport.serializeUser(function(user, done) {
-  done(null, user);
+    done(null, user);
 });
 
 passport.deserializeUser(function(user, done) {
-  done(null, user);
+    done(null, user);
 });
 
 // --- ROUTES ---
@@ -106,11 +106,18 @@ app.get('/', rootHandler);
 
 // login
 app.get('/login', passport.authenticate('google', { scope: ['profile', 'email'] }));
-app.get('/login/callback', 
-  passport.authenticate('google', { failureRedirect: '/login' }),
-  function(req, res) {
+app.get('/login/callback', passport.authenticate('google', {failureRedirect: '/login'}), function(request, response) {
     // res.redirect('/');
-    res.json("hello");
+    console.log(response);
+    var auth_token = "super_secret_token";
+    var user_firstname = "Susan";
+    var user_email = "hello@example.com";
+    response.writeHead(200, {'Content-Type': 'text/html'});
+    response.write('<p>Please wait...</p>');
+    response.write('<span id="auth_token" style="display:none">' + auth_token + '</span>');
+    response.write('<span id="user_firstname" style="display:none">' + user_firstname + '</span>');
+    response.write('<span id="user_email" style="display:none">' + user_email + '</span>');
+    response.end();
 });
 
 // blacklist
