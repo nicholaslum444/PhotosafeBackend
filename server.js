@@ -471,10 +471,11 @@ function compare(downloadedFilepath, username, apiResponse) {
         });
         console.log(similarityInfos);
         // delete the new files
-        fs.unlink(getResizedFilePath(downloadedFilepath));
-        blacklistImagePaths.forEach(function(imagePath) {
-            fs.unlink(getResizedFilePath(imagePath.path));
-        });
+        // fs.unlink(getResizedFilePath(downloadedFilepath));
+        // blacklistImagePaths.forEach(function(imagePath) {
+        //     fs.unlink(getResizedFilePath(imagePath.path));
+        // });
+        // NOTE files won't be deleted
         
         // send response
         sendCompareResponse(apiResponse, similarityInfos, null)
