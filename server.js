@@ -66,14 +66,14 @@ app.use(bodyParser.json());
 app.use(passport.initialize());
 app.use(passport.session());
 
-var CLIENT_ID = '252949635913-31l4et5ap2gcbfg3dqhp4jf807cppcel.apps.googleusercontent.com';
-var CLIENT_SECRET = 'WUE6Wj1A50ZtqMfnq01OVGIq';
-var REDIRECT_URL = 'http://localhost:1881/login/callback';
+// var CLIENT_ID = '252949635913-31l4et5ap2gcbfg3dqhp4jf807cppcel.apps.googleusercontent.com';
+// var CLIENT_SECRET = 'WUE6Wj1A50ZtqMfnq01OVGIq';
+// var REDIRECT_URL = 'http://api.photosafe.tk:1881/login/callback';
 
 passport.use(new GoogleStrategy({
-    clientID: CLIENT_ID,
-    clientSecret: CLIENT_SECRET,
-    callbackURL: REDIRECT_URL
+    clientID: config.oauth.client_id,
+    clientSecret: config.oauth.client_secret,
+    callbackURL: config.oauth.redirect_url
   	},
   	function(token, tokenSecret, profile, done) {
       	connection.query('SELECT * FROM users WHERE googleID=' + profile.id + ';', function (error, results, fields) {
@@ -109,7 +109,8 @@ app.get('/login', passport.authenticate('google', { scope: ['profile', 'email'] 
 app.get('/login/callback', 
   passport.authenticate('google', { failureRedirect: '/login' }),
   function(req, res) {
-    res.redirect('/');
+    // res.redirect('/');
+    res.json("hello");
 });
 
 // blacklist
