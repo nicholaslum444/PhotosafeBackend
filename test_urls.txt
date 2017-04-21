@@ -1,0 +1,13 @@
+POST
+localhost:1881/blacklist/add/url?auth_token=asdasd
+localhost:1881/blacklist/add/img?auth_token=asdasd
+localhost:1881/blacklist/img/edit?auth_token=asdasd&image_key=12345
+localhost:1881/blacklist/img/delete?auth_token=asdasd&image_key=12345
+localhost:1881/compare?auth_token=asdasd
+localhost:1881/settings/update?auth_token=asdasd
+
+GET
+localhost:1881/blacklist/keys?auth_token=asdasd
+localhost:1881/blacklist/img?auth_token=asdasd&image_key=12345
+localhost:1881/blacklist/img/info?auth_token=asdasd&image_key=12345
+localhost:1881/settings?auth_token=asdasd

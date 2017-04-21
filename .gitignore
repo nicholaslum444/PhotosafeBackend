@@ -1,3 +1,8 @@
+# custom
+uploads/tmp/*
+compare/*
+config.js
+
 # Logs
 logs
 *.log
