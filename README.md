@@ -1,6 +1,7 @@
 # PhotoSafeBackend
 A repo housing our server-side code.
 
+
 # Setup
 * Node version: v6.10.2
 * Required ports: 1880, 1881
@@ -25,5 +26,15 @@ Set apache/nginx to route http://api.photosafe.tk to localhost port 1881, i.e. h
 
 This guide was followed: https://www.digitalocean.com/community/tutorials/how-to-set-up-a-node-js-application-for-production-on-ubuntu-14-04
 
-## Notes
+## Setup Notes
 If you encounter node-gyp error on Windows, download Visual C++ Build Tools 2015 and then run `npm config set msvs_version 2015`. Now node-gyp should work.
+
+
+# Comparing Images
+Dummy images are prepared in the `uploads/` folder: `poster.jpg`, `scocer.jpg` and `test.jpg`.
+
+Both `poster.jpg` and `soccer.jpg` can be found on the http://nuscomputing.com/ home page. 
+
+Ideally, both these images should be blocked when the user visits the site. No other image should be blocked.
+
+Of course there may be false positives. It is up to the front-end to decide a suitable threshold.
