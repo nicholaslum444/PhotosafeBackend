@@ -12,14 +12,28 @@ var express = require('express');
 var bodyParser = require('body-parser');
 
 // multer for handling file uploads
-var multer  = require('multer')
+var multer = require('multer');
+
+// resemble.js
+var resemble = require('node-resemble-js');
+
+// request to get image from urls
+var req = require('request');
+
+// filesystem
+var fs = require('fs');
 
 // --- BINDINGS ---
 
 var app = express();
-var upload = multer({ 'dest': __dirname + '/uploads/tmp' });
 app.use(bodyParser.urlencoded({limit:IMAGE_SIZE_LIMIT, extended:true}));
 app.use(bodyParser.json({limit:IMAGE_SIZE_LIMIT}));
+
+var upload = multer({ 'dest': __dirname + '/uploads/tmp' });
+
+resemble.outputSettings({
+    largeImageThreshold: 0
+});
 
 // --- ROUTES ---
 
@@ -264,10 +278,11 @@ function compareHandler(request, response) {
         return;
     }
     
-    var similarityInfo = compare(imageUrl);
-    var responseObj = createResponseObj('success', similarityInfo);
-    response.json(responseObj);
-    return;
+    var username = getUsernameFromAuthToken(authToken);
+    downloadAndCompare(imageUrl, username, response);
+    // var responseObj = createResponseObj('success', similarityInfo);
+    // response.json(responseObj);
+    // return;
 }
 
 function getSettingsHandler(request, response) {
@@ -317,14 +332,105 @@ function hasPermission(username, imageKey) {
 }
 
 // TODO implement comparision for image
-function compare(imageKey) {
-    return [{
-        image_key: '78e67d8f9a569db686c54c8e67.jpg',
-        similarity: 0.9
-    },{
-        image_key: '88e6769db686d8f9a5c54c8e67.jpg',
-        similarity: 0.2
-    }];
+function downloadAndCompare(imageUrl, username, apiResponse) {
+    
+    // download image
+    var imageDownload = req.get(imageUrl);
+    
+    // verify response code
+    imageDownload.on('response', function(res) {
+        if (res.statusCode !== 200) {
+            return sendCompareResponse(apiResponse, null, 'Response status was ' + res.statusCode);
+        }
+    });
+
+    // check for request errors
+    imageDownload.on('error', function (err) {
+        return sendCompareResponse(apiResponse, null, err.message);
+    });
+    
+    var downloadedFilepath = 'compare/' + createTemporaryFilename() + '.png';
+    
+    var downloadedFile = fs.createWriteStream(downloadedFilepath);
+
+    imageDownload.pipe(downloadedFile);
+
+    downloadedFile.on('error', function(err) { // Handle errors
+        fs.unlink(downloadedFilepath); // Delete the file async. (But we don't check the result)
+        return sendCompareResponse(apiResponse, null, err.message);
+    });
+
+    downloadedFile.on('finish', function() {
+        downloadedFile.close(compare(downloadedFilepath, username, apiResponse));  // close() is async, call cb after close completes.
+    });
+    
+    // return [{
+    //     image_key: '78e67d8f9a569db686c54c8e67.jpg',
+    //     similarity: 0.9
+    // },{
+    //     image_key: '88e6769db686d8f9a5c54c8e67.jpg',
+    //     similarity: 0.2
+    // }];
+}
+
+function compare(downloadedFilepath, username, apiResponse) {
+    return function() {
+        console.log(downloadedFilepath);
+        var blacklistImageKeys = getUserBlacklistKeys(username);
+        var blacklistImagePaths = blacklistImageKeys.map(getBlacklistImagePath);
+        var promises = [];
+        blacklistImagePaths.forEach(function(imagePath) {
+            promises.push(resemblePromise(downloadedFilepath, imagePath.path, imagePath.key));
+        });
+        Promise.all(promises).then(function(promiseResults) {
+            console.log(promiseResults);
+            var similarityInfos = promiseResults.map(function(result) {
+                console.log(result.data);
+                var misMatchPercentage = parseFloat(result.data.misMatchPercentage);
+                var similarity = (100.0 - misMatchPercentage) / 100.0;
+                var similarityInfo = {image_key: result.key, similarity: similarity}
+                console.log(similarityInfo);
+                return similarityInfo;
+            });
+            console.log(similarityInfos);
+            sendCompareResponse(apiResponse, similarityInfos, null)
+        });
+    };
+}
+
+function resemblePromise(downloadedFilepath, imagePath, imageKey) {
+    return new Promise(function(resolve, reject) {
+        console.log(imagePath);
+        resemble(downloadedFilepath).compareTo(imagePath).ignoreColors().onComplete(function(data) {
+            console.log(data);
+            resolve({data:data, key:imageKey})
+        });
+    });
+}
+
+function sendCompareResponse(response, similarityInfo, error) {
+    var responseObj = createResponseObj('success', similarityInfo);
+    response.json(responseObj);
+    return;
+}
+
+function createTemporaryFilename() {
+    return 'tempfile' + getRandomInt(0, 100000000);
+}
+
+function getRandomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+// TODO implement get blacklist image paths
+function getBlacklistImagePath(imageKey) {
+    if (imageKey === 'asd') {
+        return {key:imageKey, path:'uploads/noimg.jpg'};
+    } else if (imageKey === 'zxc') {
+        return {key:imageKey, path:'uploads/test.jpg'};
+    } else if (imageKey === 'qwe') {
+        return {key:imageKey, path:'uploads/npm.png'};
+    }
 }
 
 // TODO implement get user's settings
@@ -369,7 +475,7 @@ function addImageFileToBlacklist(file) {
 
 // TODO implement get blacklist of user
 function getUserBlacklistKeys(username) {
-    return ['blacklist', 'of', 'images', username]
+    return ['asd', 'qwe', 'zxc']
 }
 
 // TODO check if image key is valid
