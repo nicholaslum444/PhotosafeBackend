@@ -20,13 +20,16 @@ var GoogleStrategy = require('passport-google-oauth').OAuth2Strategy;
 var config = require('./config');
 var mysql = require('mysql');
 var connection = mysql.createConnection({
+  multipleStatements: true,
   host     : config.db.host,
   user     : config.db.user,
   password : config.db.password,
   database : config.db.database
 });
 connection.connect();
-connection.query('CREATE TABLE IF NOT EXISTS users (googleID VARCHAR(255) NOT NULL, firstName VARCHAR(255), email VARCHAR(255));');
+connection.query('CREATE TABLE IF NOT EXISTS users (userID VARCHAR(255) NOT NULL, firstName VARCHAR(255), email VARCHAR(255));');
+connection.query('CREATE TABLE IF NOT EXISTS images (imageKey INT NOT NULL AUTO_INCREMENT, filename VARCHAR(255), userID VARCHAR(255), PRIMARY KEY (imageKey));');
+connection.query('CREATE TABLE IF NOT EXISTS keywords (imageKey INT, keyword VARCHAR(255));');
 
 // multer for handling file uploads
 var multer = require('multer');
@@ -76,16 +79,17 @@ passport.use(new GoogleStrategy({
     callbackURL: REDIRECT_URL
   	},
   	function(token, tokenSecret, profile, done) {
-      	connection.query('SELECT * FROM users WHERE googleID=' + profile.id + ';', function (error, results, fields) {
+      	connection.query('SELECT * FROM users WHERE userID=' + profile.id + ';', function (error, result) {
   			if (error) {
-  				return done(err);
+  				return done(error);
 			  } 
-
+        console.log(profile.emails[0].value);
         var userInfo = {auth_token: token, first_name: profile.name.givenName};
-        if (results) {
+        if (result) {
 				  return done(null, userInfo);
 			  } else {
-          // add user to DB
+          connection.query('INSERT INTO users (userID, first_name, email) VALUES (' 
+            + profile.id + ', ' + userInfo.first_name + ", " + profile.emails[0].value + ');');
           return done(null, userInfo);
         }
 	});
@@ -555,20 +559,23 @@ function getImageFileExtension(imageFilepath) {
     return ext;
 }
 
-// TODO implement permission check for images
-function hasPermission(username, imageKey) {
-    return true;
+// IMPLEMENTED
+function hasPermission(userID, imageKey) {
+    connection.query(
+        'SELECT imageKey FROM images WHERE imageKey=' + imageKey + 'AND userID=' + userID + ');', 
+        function(error, result) {
+            return (result == true);
+        });
 }
 
-// TODO implement get blacklist image paths
+// IMPLEMENTED
 function getBlacklistImagePath(imageKey) {
-    if (imageKey === 'poster') {
-        return {key:imageKey, path:'uploads/poster.jpg'};
-    } else if (imageKey === 'test') {
-        return {key:imageKey, path:'uploads/test.jpg'};
-    } else if (imageKey === 'soccer') {
-        return {key:imageKey, path:'uploads/soccer.jpg'};
-    }
+    // query will never fail and will only ever return 1 result
+    connection.query(
+        'SELECT filename FROM images WHERE imageKey=' + imageKey + ';', 
+        function(error, result) {
+            return 'uploads/' + result[0].filename;
+        });
 }
 
 // TODO implement get user's settings
@@ -588,7 +595,15 @@ function updateSettings(username, settings) {
 
 // TODO implement get image info
 function getImageInfo(imageKey) {
-    return {image_keywords: ['keywords', 'of', 'image', imageKey]}
+    var keywords = [];
+    connection.query(
+        'SELECT keyword FROM keywords WHERE imageKey=' + imageKey + ';',
+        function(error, result) {
+            for (var i = 0; i < result.length; i++) {
+                keywords.push(result[i].keyword);
+            }
+        });
+    return {image_keywords: keywords}
 }
 
 // TODO implement edit image, and return success true
@@ -602,7 +617,16 @@ function deleteImage(imageKey) {
 }
 
 // TODO implement add url to blacklist
-function addUrlToBlacklist(imageUrl) {
+function addUrlToBlacklist(userID, imageUrl) {
+    var imageDownload = req.get(imageUrl);
+
+    var imageInfo = {}
+    connection.query(
+        'INSERT INTO TABLE images (userID, filename) VALUES ($1, $2);' + 
+        'SELECT imageKey FROM images ORDER BY imageKey DESC LIMIT 1;', imageURL, userID, 
+        function(error, result) {
+
+        });
     return 'image-key-af8163d7e9a000';
 }
 
@@ -612,7 +636,7 @@ function addImageFileToBlacklist(file) {
 }
 
 // TODO implement get blacklist of user
-function getUserBlacklistKeys(username) {
+function getUserBlacklistKeys(userID) {
     return ['soccer', 'test', 'poster']
 }
 
