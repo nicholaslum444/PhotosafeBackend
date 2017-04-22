@@ -148,31 +148,6 @@ function rootHandler(request, response) {
     return;
 }
 
-// for POST 'blacklist/add/url?auth_token=asdasd'
-// blacklists the image file at the given url
-function addUrlToBlacklistHandler(request, response) {
-    var authToken = request.query.auth_token;
-    var imageUrl = request.body.image_url;
-    
-    if (!isValidAuthToken(authToken)) {
-        var responseObj = createResponseObj('fail', null, {code:401, message:'auth token not valid'})
-        response.json(responseObj);
-        return;
-    }
-    
-    if (!isValidUrl(imageUrl)) {
-        var responseObj = createResponseObj('fail', null, {code:500, message:'not a valid url'})
-        response.json(responseObj);
-        return;
-    }
-    
-    var imageKey = addUrlToBlacklist(imageUrl);
-    var data = {image_key:imageKey};
-    var responseObj = createResponseObj('success', data);
-    response.json(responseObj);
-    return;
-}
-
 // for POST 'blacklist/add/img?auth_token=asdasd'
 // blacklists the image file as uploaded
 function addImageFileToBlacklistHandler(request, response) {
@@ -408,12 +383,109 @@ function updateSettingsHandler(request, response) {
     return;
 }
 
+// for POST 'blacklist/add/url?auth_token=asdasd'
+// blacklists the image file at the given url
+function addUrlToBlacklistHandler(request, response) {
+    var authToken = request.query.auth_token;
+    var imageUrl = request.body.image_url;
+    
+    if (!isValidAuthToken(authToken)) {
+        var responseObj = createResponseObj('fail', null, {code:401, message:'auth token not valid'})
+        response.json(responseObj);
+        return;
+    }
+    
+    if (!isValidUrl(imageUrl)) {
+        var responseObj = createResponseObj('fail', null, {code:500, message:'not a valid url'})
+        response.json(responseObj);
+        return;
+    }
+    
+    var userId = getUserIdFromAuthToken(authToken);
+    downloadAndAddToBlacklist(imageUrl, userId, response);
+}
+
 // --- HELPER FUNCTIONS ---
+
+// downloads and store in blacklist
+function downloadAndAddToBlacklist(imageUrl, userId, apiResponse) {
+    // download image
+    var imageDownload = req.get(imageUrl);
+    
+    // verify response code
+    imageDownload.on('response', function(res) {
+        if (res.statusCode !== 200) {
+            console.log('Response status was ' + res.statusCode);
+            return sendFailResponse(apiResponse, null, {message:'Response status was ' + res.statusCode});
+        }
+    });
+
+    // check for request errors
+    imageDownload.on('error', function (err) {
+        console.log(err.message);
+        return sendFailResponse(apiResponse, null, err);
+    });
+    
+    // write the image to file, without extension
+    ensureDirectorySync('uploads');
+    var tempFilename = createTemporaryFilename();
+    var downloadedFilepath = 'uploads/' + tempFilename;
+    var downloadedFile = fs.createWriteStream(downloadedFilepath);
+    imageDownload.pipe(downloadedFile);
+    
+    // Handle errors
+    downloadedFile.on('error', function(err) {
+        console.log(err.message);
+        fs.unlinkSync(downloadedFilepath);
+        return sendFailResponse(apiResponse, null, err);
+    });
+    
+    // carry out comparision if no errors
+    downloadedFile.on('finish', function() {
+        // close the stream
+        downloadedFile.close()
+            
+        // rename the downloaded file to its proper extension
+        var fileExtension = getImageFileExtension(downloadedFilepath);
+        var downloadedFilepathExt = downloadedFilepath + "." + fileExtension;
+        var downloadedFilenameExt = tempFilename + "." + fileExtension;
+        // fs.renameSync(downloadedFilepath, downloadedFilepathExt);
+        console.log(downloadedFilepathExt);
+        
+        // resize image
+        sharp(downloadedFilepath).resize(500).toFile(downloadedFilepathExt).then(function() {    
+            // add to blacklist
+            addUrlToBlacklist(downloadedFilenameExt, userId, apiResponse);
+        });
+    });
+}
+
+// add url to blacklist in database
+function addUrlToBlacklist(downloadedFilename, userId, apiResponse) {
+    var query = 'INSERT INTO images (userID, filename) VALUES (?, ?);';
+    var args = [userId, downloadedFilename];
+    // insert into db
+    connection.query(query, args, function(error, result) {
+        if (error) {
+            console.log(error)
+            return sendFailResponse(apiResponse, null, error);
+        }
+        
+        console.log(result);
+        console.log("db query for " + downloadedFilename);
+        
+        // return image key in response 
+        var imageKey = result.insertId;
+        var data = {image_key:imageKey};
+        var responseObj = createResponseObj('success', data);
+        apiResponse.json(responseObj);
+        return;
+    });
+}
 
 // downloads the image at the url and compares it against the user's blacklist
 // returning the response via apiResponse
 function downloadAndCompare(imageUrl, username, apiResponse) {
-    
     // download image
     var imageDownload = req.get(imageUrl);
     
@@ -528,6 +600,13 @@ function resemblePromise(downloadedFilepath, imagePath, imageKey) {
 }
 
 // sends a json response via the response object
+function sendFailResponse(response, similarityInfo, error) {
+    var responseObj = createResponseObj('fail', similarityInfo, error);
+    response.json(responseObj);
+    return;
+}
+
+// sends a json response via the response object
 function sendCompareResponse(response, similarityInfo, error) {
     var responseObj = createResponseObj('success', similarityInfo);
     response.json(responseObj);
@@ -624,20 +703,6 @@ function deleteImage(imageKey) {
     return true;
 }
 
-// TODO implement add url to blacklist
-function addUrlToBlacklist(userID, imageUrl) {
-    var imageDownload = req.get(imageUrl);
-
-    var imageInfo = {}
-    connection.query(
-        'INSERT INTO TABLE images (userID, filename) VALUES ($1, $2);' + 
-        'SELECT imageKey FROM images ORDER BY imageKey DESC LIMIT 1;', imageURL, userID, 
-        function(error, result) {
-
-        });
-    return 'image-key-af8163d7e9a000';
-}
-
 // TODO implement add image file to blacklist
 function addImageFileToBlacklist(file) {
     return 'image-key-af8163d7e9a999';
@@ -692,6 +757,11 @@ function isValidAuthToken(authToken) {
 // TODO replace with actual get
 function getUsernameFromAuthToken(authToken) {
     return 'nick';
+}
+
+// TODO replace with actual get
+function getUserIdFromAuthToken(authToken) {
+    return 'some_user_id';
 }
 
 // creates the response object to be returned in api
