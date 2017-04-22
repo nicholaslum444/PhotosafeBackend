@@ -31,7 +31,7 @@ If you encounter node-gyp error on Windows, download Visual C++ Build Tools 2015
 
 
 # Comparing Images
-Dummy images are prepared in the `uploads/` folder: `poster.jpg`, `scocer.jpg` and `test.jpg`.
+Dummy images are prepared in the `uploads/` folder: `poster.jpg`, `soccer.jpg` and `test.jpg`.
 
 Both `poster.jpg` and `soccer.jpg` can be found on the http://nuscomputing.com/ home page. 
 
