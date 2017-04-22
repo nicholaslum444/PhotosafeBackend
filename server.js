@@ -84,7 +84,7 @@ passport.use(new GoogleStrategy({
   				return done(error);
 			  } 
         console.log(profile.emails[0].value);
-        var userInfo = {auth_token: token, first_name: profile.name.givenName};
+        var userInfo = {auth_token: token, user_firstname: profile.name.givenName, user_email: profile.emails[0].value};
         if (result) {
 				  return done(null, userInfo);
 			  } else {
@@ -112,10 +112,10 @@ app.get('/', rootHandler);
 app.get('/login', passport.authenticate('google', { scope: ['profile', 'email'] }));
 app.get('/login/callback', passport.authenticate('google', {failureRedirect: '/login'}), function(request, response) {
     // res.redirect('/');
-    console.log(response.user);
-    var auth_token = "super_secret_token";
-    var user_firstname = "Susan";
-    var user_email = "hello@example.com";
+    console.log(request.user);
+    var auth_token = request.user.auth_token;
+    var user_firstname = request.user.user_firstname;
+    var user_email = request.user.user_email;
     response.writeHead(200, {'Content-Type': 'text/html'});
     response.write('<p>Please wait...</p>');
     response.write('<span id="auth_token" style="display:none">' + auth_token + '</span>');
