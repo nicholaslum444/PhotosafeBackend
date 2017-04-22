@@ -108,7 +108,7 @@ app.get('/', rootHandler);
 app.get('/login', passport.authenticate('google', { scope: ['profile', 'email'] }));
 app.get('/login/callback', passport.authenticate('google', {failureRedirect: '/login'}), function(request, response) {
     // res.redirect('/');
-    console.log(response);
+    console.log(response.user);
     var auth_token = "super_secret_token";
     var user_firstname = "Susan";
     var user_email = "hello@example.com";
@@ -140,7 +140,7 @@ app.post('/settings/update', updateSettingsHandler);
 
 // root
 function rootHandler(request, response) {
-    response.json([0,1,2,3,4]);
+    response.json(['you', 'should not be here',1,2,3,4]);
     return;
 }
 
