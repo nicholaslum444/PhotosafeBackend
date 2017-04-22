@@ -191,36 +191,6 @@ function getAllBlacklistKeysHandler(request, response) {
     return;
 }
 
-// for GET 'blacklist/img?auth_token=asdasd&image_key=qweqwe'
-// gets the image file that corresponds to the image key
-function getBlacklistImageFileHandler(request, response) {
-    var authToken = request.query.auth_token;
-    var imageKey = request.query.image_key;
-    
-    if (!isValidAuthToken(authToken)) {
-        var responseObj = createResponseObj('fail', null, {code:401, message:'auth token not valid'})
-        response.json(responseObj);
-        return;
-    }
-    
-    if (!isValidImageKey(imageKey)) {
-        var responseObj = createResponseObj('fail', null, {code:404, message:'image key not valid'})
-        response.json(responseObj);
-        return;
-    }
-    
-    var username = getUsernameFromAuthToken(authToken);
-    if (!hasPermission(username, imageKey)) {
-        var responseObj = createResponseObj('fail', null, {code:403, message:'no permission to access image'})
-        response.json(responseObj);
-        return;
-    }
-    
-    var filepath = getFilepathFromImageKey(imageKey);
-    response.sendFile(filepath);
-    return;
-}
-
 function editBlacklistImageHandler(request, response) {
     var authToken = request.query.auth_token;
     var imageKey = request.query.image_key;
@@ -405,7 +375,60 @@ function addUrlToBlacklistHandler(request, response) {
     downloadAndAddToBlacklist(imageUrl, userId, response);
 }
 
+// for GET 'blacklist/img?auth_token=asdasd&image_key=qweqwe'
+// gets the image file that corresponds to the image key
+function getBlacklistImageFileHandler(request, response) {
+    var authToken = request.query.auth_token;
+    var imageKey = request.query.image_key;
+    
+    if (!isValidAuthToken(authToken)) {
+        var responseObj = createResponseObj('fail', null, {code:401, message:'auth token not valid'})
+        response.json(responseObj);
+        return;
+    }
+    
+    if (!isValidImageKey(imageKey)) {
+        var responseObj = createResponseObj('fail', null, {code:404, message:'image key not valid'})
+        response.json(responseObj);
+        return;
+    }
+    
+    var userId = getUserIdFromAuthToken(authToken);
+    if (!hasPermission(userId, imageKey)) {
+        var responseObj = createResponseObj('fail', null, {code:403, message:'no permission to access image'})
+        response.json(responseObj);
+        return;
+    }
+    
+    getFilepathFromImageKey(imageKey, response);
+    // response.sendFile(filepath);
+    // return;
+}
+
 // --- HELPER FUNCTIONS ---
+
+// gets filepath by image key
+function getFilepathFromImageKey(imageKey, apiResponse) {
+    var query = "SELECT filename FROM images WHERE imageKey = ?";
+    var args = [imageKey];
+    // insert into db
+    connection.query(query, args, function(error, result) {
+        if (error) {
+            console.log(error)
+            return sendFailResponse(apiResponse, null, error);
+        }
+        
+        console.log(result[0].filename);
+        console.log("db query for " + imageKey);
+        
+        // return image key in response 
+        var filename = result[0].filename;
+        var filepath = __dirname + '/uploads/' + filename;
+        console.log(filepath);
+        apiResponse.sendFile(filepath);
+        return;
+    });
+}
 
 // downloads and store in blacklist
 function downloadAndAddToBlacklist(imageUrl, userId, apiResponse) {
@@ -646,13 +669,15 @@ function getImageFileExtension(imageFilepath) {
     return ext;
 }
 
-// IMPLEMENTED
+// TODO unimplemented it because it's causing problems
+// this function is a callback so it can't return a boolean
 function hasPermission(userID, imageKey) {
-    connection.query(
-        'SELECT imageKey FROM images WHERE imageKey=' + imageKey + 'AND userID=' + userID + ');', 
-        function(error, result) {
-            return (result == true);
-        });
+    // connection.query(
+    //     'SELECT imageKey FROM images WHERE imageKey=' + imageKey + 'AND userID=' + userID + ');', 
+    //     function(error, result) {
+    //         return (result == true);
+    //     });
+    return true;
 }
 
 // IMPLEMENTED
@@ -738,11 +763,6 @@ function isValidUrl(url) {
     } else {
         return false;
     }
-}
-
-// TODO implement get by image key
-function getFilepathFromImageKey(imageKey) {
-    return __dirname + '/uploads/test.jpg';
 }
 
 // TODO replace with actual validity check
