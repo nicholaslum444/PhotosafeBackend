@@ -173,24 +173,6 @@ function addImageFileToBlacklistHandler(request, response) {
     return;
 }
 
-// for GET '/blacklist/keys?auth_token=asdad'
-// gets all the keys in the user's blacklist
-function getAllBlacklistKeysHandler(request, response) {
-    var authToken = request.query.auth_token;
-    
-    if (!isValidAuthToken(authToken)) {
-        var responseObj = createResponseObj('fail', null, {code:401, message:'auth token not valid'})
-        response.json(responseObj);
-        return;
-    }
-    
-    var username = getUsernameFromAuthToken(authToken);
-    var userBlacklistKeys = getUserBlacklistKeys(username);
-    var responseObj = createResponseObj('success', userBlacklistKeys);
-    response.json(responseObj);
-    return;
-}
-
 function editBlacklistImageHandler(request, response) {
     var authToken = request.query.auth_token;
     var imageKey = request.query.image_key;
@@ -208,8 +190,8 @@ function editBlacklistImageHandler(request, response) {
         return;
     }
     
-    var username = getUsernameFromAuthToken(authToken);
-    if (!hasPermission(username, imageKey)) {
+    var userId = getUserIdFromAuthToken(authToken);
+    if (!hasPermission(userId, imageKey)) {
         var responseObj = createResponseObj('fail', null, {code:403, message:'no permission to access image'})
         response.json(responseObj);
         return;
@@ -243,8 +225,8 @@ function deleteBlacklistImageHandler(request, response) {
         return;
     }
     
-    var username = getUsernameFromAuthToken(authToken);
-    if (!hasPermission(username, imageKey)) {
+    var userId = getUserIdFromAuthToken(authToken);
+    if (!hasPermission(userId, imageKey)) {
         var responseObj = createResponseObj('fail', null, {code:403, message:'no permission to access image'})
         response.json(responseObj);
         return;
@@ -278,8 +260,8 @@ function getBlacklistImageInfoHandler(request, response) {
         return;
     }
     
-    var username = getUsernameFromAuthToken(authToken);
-    if (!hasPermission(username, imageKey)) {
+    var userId = getUserIdFromAuthToken(authToken);
+    if (!hasPermission(userId, imageKey)) {
         var responseObj = createResponseObj('fail', null, {code:403, message:'no permission to access image'})
         response.json(responseObj);
         return;
@@ -307,8 +289,8 @@ function compareHandler(request, response) {
         return;
     }
     
-    var username = getUsernameFromAuthToken(authToken);
-    downloadAndCompare(imageUrl, username, response);
+    var userId = getUserIdFromAuthToken(authToken);
+    downloadAndCompare(imageUrl, userId, response);
     // var responseObj = createResponseObj('success', similarityInfo);
     // response.json(responseObj);
     // return;
@@ -323,8 +305,8 @@ function getSettingsHandler(request, response) {
         return;
     }
     
-    var username = getUsernameFromAuthToken(authToken);
-    var userSettings = getUserSettings(username);
+    var userId = getUserIdFromAuthToken(authToken);
+    var userSettings = getUserSettings(userId);
     var responseObj = createResponseObj('success', userSettings);
     response.json(responseObj);
     return;
@@ -340,8 +322,8 @@ function updateSettingsHandler(request, response) {
         return;
     }
     
-    var username = getUsernameFromAuthToken(authToken);
-    var updateSuccessful = updateSettings(username, settings);
+    var userId = getUserIdFromAuthToken(authToken);
+    var updateSuccessful = updateSettings(userId, settings);
     if (!updateSuccessful) {
         var responseObj = createResponseObj('fail', null, {code:500, message:'settings update failed'})
         response.json(responseObj);
@@ -405,7 +387,80 @@ function getBlacklistImageFileHandler(request, response) {
     // return;
 }
 
+// for GET '/blacklist/keys?auth_token=asdad'
+// gets all the keys in the user's blacklist
+function getAllBlacklistKeysHandler(request, response) {
+    var authToken = request.query.auth_token;
+    
+    if (!isValidAuthToken(authToken)) {
+        var responseObj = createResponseObj('fail', null, {code:401, message:'auth token not valid'})
+        response.json(responseObj);
+        return;
+    }
+    
+    var userId = getUserIdFromAuthToken(authToken);
+    getUserBlacklistKeys(userId, response, sendSuccessResponse(response));
+    // var responseObj = createResponseObj('success', userBlacklistKeys);
+    // response.json(responseObj);
+    // return;
+}
+
 // --- HELPER FUNCTIONS ---
+
+// TODO implement get blacklist of user
+function getUserBlacklistKeys(userId, response, callback) {
+    var query = "SELECT imageKey FROM images WHERE userID = ?";
+    var args = [userId];
+    // insert into db
+    connection.query(query, args, function(error, result) {
+        if (error) {
+            console.log(error)
+            return sendFailResponse(apiResponse, null, error);
+        }
+        
+        console.log(result);
+        console.log("db query for " + userId);
+        var imageKeys = [];
+        result.forEach(function(e) {
+            imageKeys.push(e.imageKey);
+        });
+        console.log(imageKeys);
+        callback(imageKeys);
+        return;
+    });
+}
+
+// get user blacklist paths {key:1, path:img.jpg}
+function getUserBlacklistPaths(userId, response, callback) {
+    var query = "SELECT filename, imageKey FROM images WHERE userID = ?";
+    var args = [userId];
+    // insert into db
+    connection.query(query, args, function(error, result) {
+        if (error) {
+            console.log(error)
+            return sendFailResponse(apiResponse, null, error);
+        }
+        
+        console.log(result);
+        console.log("db query for " + userId);
+        var imagePaths = [];
+        result.forEach(function(e) {
+            imagePaths.push({key:e.imageKey, path:"uploads/" + e.filename});
+        });
+        console.log(imagePaths);
+        callback(imagePaths);
+        return;
+    });
+}
+
+function sendSuccessResponse(response) {
+    return function(data) {
+        console.log(data);
+        var responseObj = createResponseObj('success', data);
+        response.json(responseObj);
+        return;
+    }
+}
 
 // gets filepath by image key
 function getFilepathFromImageKey(imageKey, apiResponse) {
@@ -554,38 +609,31 @@ function downloadAndCompare(imageUrl, username, apiResponse) {
 
 // compares the given image (at the path) to the username's blacklist
 // then returns the response via apiResponse
-function compare(downloadedFilepath, username, apiResponse) {
+function compare(downloadedFilepath, userId, apiResponse) {
     // get the images to compare against
-    var blacklistImageKeys = getUserBlacklistKeys(username);
-    var blacklistImagePaths = blacklistImageKeys.map(getBlacklistImagePath);
-    
-    // results of the comparisions in promise form
-    var promises = [];
-    blacklistImagePaths.forEach(function(imagePath) {
-        promises.push(resemblePromise(downloadedFilepath, imagePath.path, imagePath.key));
-    });
-    
-    // once comparisions are done, prepare info for response
-    Promise.all(promises).then(function(promiseResults) {
-        // console.log(promiseResults);
-        var similarityInfos = promiseResults.map(function(result) {
-            // console.log(result.data);
-            var misMatchPercentage = parseFloat(result.data.misMatchPercentage);
-            var similarity = (100.0 - misMatchPercentage) / 100.0;
-            var similarityInfo = {image_key: result.key, similarity: similarity}
-            console.log(similarityInfo);
-            return similarityInfo;
+    getUserBlacklistPaths(userId, apiResponse, function(blacklistImagePaths) {
+        // results of the comparisions in promise form
+        var promises = [];
+        blacklistImagePaths.forEach(function(imagePath) {
+            promises.push(resemblePromise(downloadedFilepath, imagePath.path, imagePath.key));
         });
-        console.log(similarityInfos);
-        // delete the new files
-        // fs.unlink(getResizedFilePath(downloadedFilepath));
-        // blacklistImagePaths.forEach(function(imagePath) {
-        //     fs.unlink(getResizedFilePath(imagePath.path));
-        // });
-        // NOTE files won't be deleted
         
-        // send response
-        sendCompareResponse(apiResponse, similarityInfos, null)
+        // once comparisions are done, prepare info for response
+        Promise.all(promises).then(function(promiseResults) {
+            // console.log(promiseResults);
+            var similarityInfos = promiseResults.map(function(result) {
+                // console.log(result.data);
+                var misMatchPercentage = parseFloat(result.data.misMatchPercentage);
+                var similarity = (100.0 - misMatchPercentage) / 100.0;
+                var similarityInfo = {image_key: result.key, similarity: similarity}
+                console.log(similarityInfo);
+                return similarityInfo;
+            });
+            console.log(similarityInfos);
+            
+            // send response
+            sendCompareResponse(apiResponse, similarityInfos, null)
+        });
     });
 }
 
@@ -733,11 +781,6 @@ function addImageFileToBlacklist(file) {
     return 'image-key-af8163d7e9a999';
 }
 
-// TODO implement get blacklist of user
-function getUserBlacklistKeys(userID) {
-    return ['soccer', 'test', 'poster']
-}
-
 // TODO check if image key is valid
 function isValidImageKey(imageKey) {
     if (imageKey) {
@@ -772,11 +815,6 @@ function isValidAuthToken(authToken) {
     } else {
         return false;
     }
-}
-
-// TODO replace with actual get
-function getUsernameFromAuthToken(authToken) {
-    return 'nick';
 }
 
 // TODO replace with actual get
