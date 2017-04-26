@@ -51,6 +51,7 @@ var fileType = require('file-type');
 // --- BINDINGS ---
 
 var app = express();
+exports.app = app;
 app.use(bodyParser.urlencoded({limit:IMAGE_SIZE_LIMIT, extended:true}));
 app.use(bodyParser.json({limit:IMAGE_SIZE_LIMIT}));
 
