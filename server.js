@@ -349,7 +349,7 @@ function addUrlToBlacklistHandler(request, response) {
     }
     
     if (!isValidUrl(imageUrl)) {
-        var responseObj = createResponseObj('fail', null, {code:500, message:'not a valid url'})
+        var responseObj = createResponseObj('fail', null, {code:500, message:'not a valid url: '})
         response.json(responseObj);
         return;
     }
@@ -419,13 +419,13 @@ function getUserBlacklistKeys(userId, response, callback) {
             return sendFailResponse(apiResponse, null, error);
         }
         
-        console.log(result);
-        console.log("db query for " + userId);
+        // console.log(result);
+        // console.log("db query for " + userId);
         var imageKeys = [];
         result.forEach(function(e) {
             imageKeys.push(e.imageKey);
         });
-        console.log(imageKeys);
+        // console.log(imageKeys);
         callback(imageKeys);
         return;
     });
@@ -550,8 +550,8 @@ function addUrlToBlacklist(downloadedFilename, userId, apiResponse) {
             return sendFailResponse(apiResponse, null, error);
         }
         
-        console.log(result);
-        console.log("db query for " + downloadedFilename);
+        // console.log(result);
+        // console.log("db query for " + downloadedFilename);
         
         // return image key in response 
         var imageKey = result.insertId;
