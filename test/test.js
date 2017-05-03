@@ -7,7 +7,7 @@ var expect = chai.expect;
 chai.use(chaiHttp);
 
 describe("Blacklist tests", function(done) {
-    it("Gets keys in blacklist", function(done) {
+    it("Gets keys in blacklist, should be [1,2,3]", function(done) {
         chai.request(server.app)
         .get("/blacklist/keys")
         .query({auth_token: "foo"})
@@ -17,21 +17,21 @@ describe("Blacklist tests", function(done) {
                 return;
             }
             response.should.have.status(200);
-            response.should.have.property("body");
             response.body.should.have.status("success");
-            // we only test for presence of data since we don't
-            // have a fixed testing database yet
-            response.body.should.have.property("data");
-            response.body.data.should.be.an.instanceOf(Array);
+            // data should be [1,2,3]
+            response.body.data.should.have.lengthOf(3);
+            response.body.data[0].should.equal(1);
+            response.body.data[1].should.equal(2);
+            response.body.data[2].should.equal(3);
             done();
             return;
         });
     });
     
-    it("Gets image file with key 9", function(done) {
+    it("Gets image file with key 1", function(done) {
         chai.request(server.app)
         .get("/blacklist/img")
-        .query({auth_token: "foo", image_key: 9})
+        .query({auth_token: "foo", image_key: 1})
         .end(function(error, response) {
             if (error) {
                 done(error);
@@ -40,16 +40,13 @@ describe("Blacklist tests", function(done) {
             response.should.have.status(200);
             response.should.have.property("body");
             response.body.should.be.an.instanceOf(Buffer);
-            // we only test for presence of buffer since we don't
-            // have a fixed testing database yet
-            // However we assume item 9 exists, which is stupid and 
-            // should be resolved
+            // TODO implement image comparision
             done();
             return
         });
     });
     
-    it("uploads an image url to the blacklist", function(done) {
+    it("Uploads an image url to the blacklist, will be key 4", function(done) {
         this.timeout(10000);
         setTimeout(done, 10000);
         chai.request(server.app)
@@ -63,12 +60,27 @@ describe("Blacklist tests", function(done) {
             }
             // console.log(response);
             response.should.have.status(200);
-            response.should.have.property("body");
             response.body.should.have.status("success");
-            response.body.should.have.property("data");
-            response.body.data.should.have.property("image_key");
-            response.body.data.image_key.should.be.a('number');
+            response.body.data.image_key.should.equal(4);
             done();
+        });
+    });
+    
+    it("Gets the new image file with key 4", function(done) {
+        chai.request(server.app)
+        .get("/blacklist/img")
+        .query({auth_token: "foo", image_key: 4})
+        .end(function(error, response) {
+            if (error) {
+                done(error);
+                return;
+            }
+            response.should.have.status(200);
+            response.should.have.property("body");
+            response.body.should.be.an.instanceOf(Buffer);
+            // TODO implement image comparision
+            done();
+            return
         });
     });
 });

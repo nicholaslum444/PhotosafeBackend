@@ -49,6 +49,15 @@ Access API via http://localhost:1881
 
 Note: since the app will hardcode the api address, use a proxy agent on your local machine to route the actual api address to localhost. Disable the proxy routing when you want to access the real server.
 
+## Testing Environment
+Tests are written in the Mocha/Chai framework. They can be found in `test/test.js`.
+
+Database seeds are found in `test/seeds.sql`. To seed the database for testing, navigate to the root of the repository and run `mysql -u root -h 127.0.0.1 -P 3306 -p < test/seeds.sql`. Replace `root` with your own mysql username. Enter your mysql password when prompted.
+
+Then run `npm test` to execute the tests. Tests run in top-down order, so you can add, check and delete items from the database in sequential tests.
+
+Re-seed the database as needed, if the environment goes out of sync.
+
 ## Production Environment
 Set apache/nginx to route http://photosafe.tk to the folder where the landing page files are stored.
 

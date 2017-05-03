@@ -820,7 +820,7 @@ function isValidAuthToken(authToken) {
 
 // TODO replace with actual get
 function getUserIdFromAuthToken(authToken) {
-    return 'some_user_id';
+    return 'test_user';
 }
 
 // creates the response object to be returned in api
