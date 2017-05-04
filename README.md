@@ -62,7 +62,7 @@ Use a google account to log in to photosafe. We only make use of the user's emai
 
 
 # Comparing Images
-Dummy images are prepared in the `uploads/` folder: `poster.jpg`, `scocer.jpg` and `test.jpg`.
+Dummy images are prepared in the `uploads/` folder: `poster.jpg`, `soccer.jpg` and `test.jpg`.
 
 Both `poster.jpg` and `soccer.jpg` can be found on the http://nuscomputing.com/ home page. 
 
