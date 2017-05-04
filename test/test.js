@@ -7,7 +7,7 @@ var expect = chai.expect;
 chai.use(chaiHttp);
 
 describe("Blacklist tests", function(done) {
-    it("Gets keys in blacklist, should be [1,2,3]", function(done) {
+    it("Retrieves keys in blacklist, should be [1,2,3]", function(done) {
         chai.request(server.app)
         .get("/blacklist/keys")
         .query({auth_token: "foo"})
@@ -28,7 +28,7 @@ describe("Blacklist tests", function(done) {
         });
     });
     
-    it("Gets image file with key 1", function(done) {
+    it("Retrieves image file with key 1", function(done) {
         chai.request(server.app)
         .get("/blacklist/img")
         .query({auth_token: "foo", image_key: 1})
@@ -38,7 +38,6 @@ describe("Blacklist tests", function(done) {
                 return;
             }
             response.should.have.status(200);
-            response.should.have.property("body");
             response.body.should.be.an.instanceOf(Buffer);
             // TODO implement image comparision
             done();
@@ -46,7 +45,7 @@ describe("Blacklist tests", function(done) {
         });
     });
     
-    it("Uploads an image url to the blacklist, will be key 4", function(done) {
+    it("Adds an image url to the blacklist, will be key 4", function(done) {
         this.timeout(10000);
         setTimeout(done, 10000);
         chai.request(server.app)
@@ -66,7 +65,7 @@ describe("Blacklist tests", function(done) {
         });
     });
     
-    it("Gets the new image file with key 4", function(done) {
+    it("Retrieves the new image file with key 4", function(done) {
         chai.request(server.app)
         .get("/blacklist/img")
         .query({auth_token: "foo", image_key: 4})
@@ -76,9 +75,26 @@ describe("Blacklist tests", function(done) {
                 return;
             }
             response.should.have.status(200);
-            response.should.have.property("body");
             response.body.should.be.an.instanceOf(Buffer);
             // TODO implement image comparision
+            done();
+            return
+        });
+    });
+    
+    it("Removes the new image file with key 4", function(done) {
+        chai.request(server.app)
+        .post("/blacklist/img/delete")
+        .query({auth_token: "foo", image_key: 4})
+        .end(function(error, response) {
+            if (error) {
+                done(error);
+                return;
+            }
+            response.should.have.status(200);
+            response.body.should.have.status("success");
+            response.body.data.should.equal("4");
+            // response.body.should.be.an.instanceOf(Buffer);
             done();
             return
         });

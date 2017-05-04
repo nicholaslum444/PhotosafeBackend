@@ -233,16 +233,16 @@ function deleteBlacklistImageHandler(request, response) {
         return;
     }
     
-    var deleteSuccessful = deleteImage(imageKey);
-    if (!deleteSuccessful) {
-        var responseObj = createResponseObj('fail', null, {code:500, message:'delete failed'})
-        response.json(responseObj);
-        return;
-    }
-    
-    var responseObj = createResponseObj('success', deleteSuccessful);
-    response.json(responseObj);
-    return;
+    deleteImage(imageKey, userId, response);
+    // if (!deleteSuccessful) {
+    //     var responseObj = createResponseObj('fail', null, {code:500, message:'delete failed'})
+    //     response.json(responseObj);
+    //     return;
+    // }
+    // 
+    // var responseObj = createResponseObj('success', deleteSuccessful);
+    // response.json(responseObj);
+    // return;
 }
 
 function getBlacklistImageInfoHandler(request, response) {
@@ -773,8 +773,26 @@ function editImage(imageKey, imageInfo) {
 }
 
 // TODO implement delete image, and return success true
-function deleteImage(imageKey) {
-    return true;
+function deleteImage(imageKey, userId, apiResponse) {
+    console.log("deleting " + imageKey + userId);
+    var query = "DELETE FROM images WHERE userID = ? && imageKey = ?;";
+    var args = [userId, imageKey];
+    // insert into db
+    connection.query(query, args, function(error, result) {
+        if (error) {
+            sendFailResponse(apiResponse, null, error);
+            return;
+        }
+        if (result.affectedRows === 0) {
+            // nothing was deleted
+            sendFailResponse(apiResponse, null, "Nothing was deleted. Please check userID and imageKey");
+            return;
+        }    
+        
+        var responseObj = createResponseObj('success', imageKey);
+        apiResponse.json(responseObj);
+        return;
+    });
 }
 
 // TODO implement add image file to blacklist
