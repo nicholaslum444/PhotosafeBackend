@@ -474,8 +474,13 @@ function getFilepathFromImageKey(imageKey, apiResponse) {
             return sendFailResponse(apiResponse, null, error);
         }
         
-        console.log(result[0].filename);
         console.log("db query for " + imageKey);
+        if (result.length === 0) {
+            console.log(result);
+            return sendFailResponse(apiResponse, null, "No image associated with image key " + imageKey);
+        }
+        
+        console.log(result[0].filename);
         
         // return image key in response 
         var filename = result[0].filename;
