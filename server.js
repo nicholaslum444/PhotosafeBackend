@@ -277,6 +277,7 @@ function getBlacklistImageInfoHandler(request, response) {
 function compareHandler(request, response) {
     var authToken = request.query.auth_token;
     var imageUrl = request.body.image_url;
+    console.log("comparing " + imageUrl);
     
     if (!isValidAuthToken(authToken)) {
         var responseObj = createResponseObj('fail', null, {code:401, message:'auth token not valid'})
@@ -400,7 +401,7 @@ function getAllBlacklistKeysHandler(request, response) {
     }
     
     var userId = getUserIdFromAuthToken(authToken);
-    getUserBlacklistKeys(userId, response, sendSuccessResponse(response));
+    getUserBlacklistKeys(userId, response);
     // var responseObj = createResponseObj('success', userBlacklistKeys);
     // response.json(responseObj);
     // return;
@@ -409,7 +410,7 @@ function getAllBlacklistKeysHandler(request, response) {
 // --- HELPER FUNCTIONS ---
 
 // TODO implement get blacklist of user
-function getUserBlacklistKeys(userId, response, callback) {
+function getUserBlacklistKeys(userId, apiResponse) {
     var query = "SELECT imageKey FROM images WHERE userID = ?";
     var args = [userId];
     // insert into db
@@ -419,14 +420,14 @@ function getUserBlacklistKeys(userId, response, callback) {
             return sendFailResponse(apiResponse, null, error);
         }
         
-        // console.log(result);
-        // console.log("db query for " + userId);
+        console.log(result);
+        console.log("db query for " + userId);
         var imageKeys = [];
         result.forEach(function(e) {
             imageKeys.push(e.imageKey);
         });
         // console.log(imageKeys);
-        callback(imageKeys);
+        sendSuccessResponse(apiResponse, imageKeys);
         return;
     });
 }
@@ -452,15 +453,6 @@ function getUserBlacklistPaths(userId, response, callback) {
         callback(imagePaths);
         return;
     });
-}
-
-function sendSuccessResponse(response) {
-    return function(data) {
-        console.log(data);
-        var responseObj = createResponseObj('success', data);
-        response.json(responseObj);
-        return;
-    }
 }
 
 // gets filepath by image key
@@ -582,7 +574,7 @@ function downloadAndCompare(imageUrl, username, apiResponse) {
 
     // check for request errors
     imageDownload.on('error', function (err) {
-        return sendCompareResponse(apiResponse, null, err.message);
+        return sendCompareResponse(apiResponse, null, err);
     });
     
     // write the image to file, without extension
@@ -650,21 +642,21 @@ function resemblePromise(downloadedFilepath, imagePath, imageKey) {
     return new Promise(function(resolve, reject) {
         console.log(imagePath);
         
-        // resize images since we can't confirm it's already resized
+        // resize only the downloaded image
         var resizedDownloadedFilePath = getResizedFilePath(downloadedFilepath);
-        var resizedImagePath = getResizedFilePath(imagePath);
+        // var resizedImagePath = getResizedFilePath(imagePath);
         
-        // carry out both resize as promises
+        // carry out resize as promise
         var resizedImages = [];
         resizedImages.push(sharp(downloadedFilepath).resize(500).toFile(resizedDownloadedFilePath));
-        resizedImages.push(sharp(imagePath).resize(500).toFile(resizedImagePath));
+        // resizedImages.push(sharp(imagePath).resize(500).toFile(resizedImagePath));
         console.log(resizedImages);
         
         // compare resized image after promise returns
         Promise.all(resizedImages).then(function(resizedImageResults) {
             console.log(resizedImageResults);
             try {
-                var diff = resemble(resizedDownloadedFilePath).compareTo(resizedImagePath).onComplete(function(data) {
+                var diff = resemble(resizedDownloadedFilePath).compareTo(imagePath).onComplete(function(data) {
                     console.log(data);
                     // return the comparision data
                     resolve({data:data, key:imageKey})
@@ -674,20 +666,6 @@ function resemblePromise(downloadedFilepath, imagePath, imageKey) {
             }
         });
     });
-}
-
-// sends a json response via the response object
-function sendFailResponse(response, similarityInfo, error) {
-    var responseObj = createResponseObj('fail', similarityInfo, error);
-    response.json(responseObj);
-    return;
-}
-
-// sends a json response via the response object
-function sendCompareResponse(response, similarityInfo, error) {
-    var responseObj = createResponseObj('success', similarityInfo);
-    response.json(responseObj);
-    return;
 }
 
 // ensure directory exists
@@ -856,6 +834,29 @@ function createResponseObj(status, data, fail) {
         responseObj.fail = fail
     }
     return responseObj;
+}
+
+function sendSuccessResponse(response) {
+    return function(data) {
+        console.log(data);
+        var responseObj = createResponseObj('success', data);
+        response.json(responseObj);
+        return;
+    }
+}
+
+// sends a json response via the response object
+function sendFailResponse(response, data, error) {
+    var responseObj = createResponseObj('fail', data, error);
+    response.json(responseObj);
+    return;
+}
+
+// sends a json response via the response object
+function sendCompareResponse(response, similarityInfo, error) {
+    var responseObj = createResponseObj('success', similarityInfo);
+    response.json(responseObj);
+    return;
 }
 
 // --- LISTEN ---
