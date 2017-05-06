@@ -233,7 +233,7 @@ function deleteBlacklistImageHandler(request, response) {
         return;
     }
     
-    deleteImage(imageKey, userId, response);
+    deleteImageAndSendResponse(imageKey, userId, response);
     // if (!deleteSuccessful) {
     //     var responseObj = createResponseObj('fail', null, {code:500, message:'delete failed'})
     //     response.json(responseObj);
@@ -409,7 +409,6 @@ function getAllBlacklistKeysHandler(request, response) {
 
 // --- HELPER FUNCTIONS ---
 
-// TODO implement get blacklist of user
 function getUserBlacklistKeys(userId, apiResponse) {
     var query = "SELECT imageKey FROM images WHERE userID = ?";
     var args = [userId];
@@ -420,8 +419,8 @@ function getUserBlacklistKeys(userId, apiResponse) {
             return sendFailResponse(apiResponse, null, error);
         }
         
-        console.log(result);
         console.log("db query for " + userId);
+        console.log(result);
         var imageKeys = [];
         result.forEach(function(e) {
             imageKeys.push(e.imageKey);
@@ -755,8 +754,7 @@ function editImage(imageKey, imageInfo) {
     return true;
 }
 
-// TODO implement delete image, and return success true
-function deleteImage(imageKey, userId, apiResponse) {
+function deleteImageAndSendResponse(imageKey, userId, apiResponse) {
     console.log("deleting " + imageKey + userId);
     var query = "DELETE FROM images WHERE userID = ? && imageKey = ?;";
     var args = [userId, imageKey];
@@ -836,13 +834,10 @@ function createResponseObj(status, data, fail) {
     return responseObj;
 }
 
-function sendSuccessResponse(response) {
-    return function(data) {
-        console.log(data);
-        var responseObj = createResponseObj('success', data);
-        response.json(responseObj);
-        return;
-    }
+function sendSuccessResponse(response, data) {
+    var responseObj = createResponseObj('success', data);
+    response.json(responseObj);
+    return;
 }
 
 // sends a json response via the response object
