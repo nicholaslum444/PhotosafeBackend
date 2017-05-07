@@ -87,6 +87,7 @@ passport.use(new GoogleStrategy({
                 return done(error);
             } 
             var userInfo = {auth_token: accessToken, 
+                            user_id: profile.id,
                             user_firstname: profile.name.givenName, 
                             user_email: profile.emails[0].value};
 
@@ -115,9 +116,18 @@ passport.deserializeUser(function(user, done) {
 app.get('/', rootHandler);
 
 app.get('/profile', isLoggedIn, function(request, response){
+    // console.log(request.session.auth_token);
+    // console.log(request.session.userID);
+
     var auth_token = request.user.auth_token;
     var user_firstname = request.user.user_firstname;
     var user_email = request.user.user_email;
+
+    session.auth_token = auth_token;
+    session.user_id = request.user.user_id;
+    console.log(session)
+    console.log(session.cookie)
+
     response.writeHead(200, {'Content-Type': 'text/html'});
     response.write('<p>Please wait...</p>');
     response.write('<span id="auth_token" style="display:none">' + auth_token + '</span>');
@@ -916,7 +926,7 @@ function isValidUrl(url) {
 
 // TODO replace with actual validity check
 function isValidAuthToken(authToken) {
-    if (authToken) {
+    if (session.auth_token === auth_token) {
         return true;
     }
     
@@ -925,6 +935,9 @@ function isValidAuthToken(authToken) {
 
 // TODO replace with actual get
 function getUserIdFromAuthToken(authToken) {
+    if (isValidAuthToken(auth_token)) {
+        return session.user_id;
+    }
     return 'test_user';
 }
 
