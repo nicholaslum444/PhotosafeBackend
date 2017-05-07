@@ -20,7 +20,6 @@ var GoogleStrategy = require('passport-google-oauth').OAuth2Strategy;
 var config = require('./config');
 var mysql = require('mysql');
 var connection = mysql.createConnection({
-  multipleStatements: true,
   host     : config.db.host,
   user     : config.db.user,
   password : config.db.password,
@@ -125,8 +124,7 @@ app.get('/profile', isLoggedIn, function(request, response){
 
     session.auth_token = auth_token;
     session.user_id = request.user.user_id;
-    console.log(session)
-    console.log(session.cookie)
+    console.log(request.session);
 
     response.writeHead(200, {'Content-Type': 'text/html'});
     response.write('<p>Please wait...</p>');
@@ -142,6 +140,7 @@ app.get('/login/callback', passport.authenticate('google', {successRedirect: '/p
 
 //logout
 app.get('/logout', function(request, response){
+    console.log(request.session);
     request.logout();
     response.redirect('/');
 })
@@ -173,8 +172,8 @@ function rootHandler(request, response) {
 // for POST 'blacklist/add/img?auth_token=asdasd'
 // blacklists the image file as uploaded
 function addImageFileToBlacklistHandler(request, response) {
-    console.log(request.file);
-    var authToken = request.query.auth_token;
+    console.log(request.session)
+    var authToken = request.session.passport.user.auth_token;
     var file = request.file;
     
     if (!isValidAuthToken(authToken)) {
@@ -200,7 +199,7 @@ function addImageFileToBlacklistHandler(request, response) {
 }
 
 function editBlacklistImageHandler(request, response) {
-    var authToken = request.query.auth_token;
+    var authToken = request.session.passport.user.auth_token;
     var imageKey = request.query.image_key;
     var imageInfo = request.body.image_info;
     
@@ -244,7 +243,7 @@ function editBlacklistImageHandler(request, response) {
 }
 
 function deleteBlacklistImageHandler(request, response) {
-    var authToken = request.query.auth_token;
+    var authToken = request.session.passport.user.auth_token;
     var imageKey = request.query.image_key;
     
     if (!isValidAuthToken(authToken)) {
@@ -279,7 +278,7 @@ function deleteBlacklistImageHandler(request, response) {
 }
 
 function getBlacklistImageInfoHandler(request, response) {
-    var authToken = request.query.auth_token;
+    var authToken = request.session.passport.user.auth_token;
     var imageKey = request.query.image_key;
     
     if (!isValidAuthToken(authToken)) {
@@ -310,7 +309,7 @@ function getBlacklistImageInfoHandler(request, response) {
 }
 
 function compareHandler(request, response) {
-    var authToken = request.query.auth_token;
+    var authToken = request.session.passport.user.auth_token;
     var imageUrl = request.body.image_url;
     console.log("comparing " + imageUrl);
     
@@ -334,7 +333,7 @@ function compareHandler(request, response) {
 }
 
 function getSettingsHandler(request, response) {
-    var authToken = request.query.auth_token;
+    var authToken = request.session.passport.user.auth_token;
     
     if (!isValidAuthToken(authToken)) {
         var responseObj = createResponseObj('fail', null, {code:401, message:'auth token not valid'})
@@ -350,7 +349,7 @@ function getSettingsHandler(request, response) {
 }
 
 function updateSettingsHandler(request, response) {
-    var authToken = request.query.auth_token;
+    var authToken = request.session.passport.user.auth_token;
     var settings = request.body.settings;
     
     if (!isValidAuthToken(authToken)) {
@@ -375,7 +374,7 @@ function updateSettingsHandler(request, response) {
 // for POST 'blacklist/add/url?auth_token=asdasd'
 // blacklists the image file at the given url
 function addUrlToBlacklistHandler(request, response) {
-    var authToken = request.query.auth_token;
+    var authToken = request.session.passport.user.auth_token;
     var imageUrl = request.body.image_url;
     
     if (!isValidAuthToken(authToken)) {
@@ -397,7 +396,9 @@ function addUrlToBlacklistHandler(request, response) {
 // for GET 'blacklist/img?auth_token=asdasd&image_key=qweqwe'
 // gets the image file that corresponds to the image key
 function getBlacklistImageFileHandler(request, response) {
-    var authToken = request.query.auth_token;
+    console.log(request);
+    //console.log(request.session);
+    var authToken = request.session.passport.user.auth_token;
     var imageKey = request.query.image_key;
     
     if (!isValidAuthToken(authToken)) {
@@ -427,7 +428,7 @@ function getBlacklistImageFileHandler(request, response) {
 // for GET '/blacklist/keys?auth_token=asdad'
 // gets all the keys in the user's blacklist
 function getAllBlacklistKeysHandler(request, response) {
-    var authToken = request.query.auth_token;
+    var authToken = request.session.passport.user.auth_token;
     
     if (!isValidAuthToken(authToken)) {
         var responseObj = createResponseObj('fail', null, {code:401, message:'auth token not valid'})
@@ -926,7 +927,7 @@ function isValidUrl(url) {
 
 // TODO replace with actual validity check
 function isValidAuthToken(authToken) {
-    if (session.auth_token === auth_token) {
+    if (authToken) {
         return true;
     }
     
