@@ -3,6 +3,7 @@ uploads/tmp/*
 uploads/tempfile*
 compare/*
 config.js
+*~
 
 # Logs
 logs

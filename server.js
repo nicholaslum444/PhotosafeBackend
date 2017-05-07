@@ -33,6 +33,12 @@ connection.query('CREATE TABLE IF NOT EXISTS keywords (imageKey INT, keyword VAR
 
 // multer for handling file uploads
 var multer = require('multer');
+var upload = multer({ 'dest': __dirname + '/uploads/tmp' });
+
+// request body handling
+var urlEncodedBody = bodyParser.urlencoded({limit:IMAGE_SIZE_LIMIT, extended:false})
+var jsonBody = bodyParser.json({limit:IMAGE_SIZE_LIMIT})
+var imageFileBody = upload.single('image_file');
 
 // resemble.js
 var resemble = require('node-resemble-js');
@@ -48,22 +54,19 @@ var fs = require('fs');
 var readChunk = require('read-chunk');
 var fileType = require('file-type');
 
+// for creating unique filenames
+var shortid = require('shortid');
+
 // --- BINDINGS ---
 
 var app = express();
 exports.app = app;
-app.use(bodyParser.urlencoded({limit:IMAGE_SIZE_LIMIT, extended:true}));
-app.use(bodyParser.json({limit:IMAGE_SIZE_LIMIT}));
-
-var upload = multer({ 'dest': __dirname + '/uploads/tmp' });
+// console.log(upload.single('asd'));
 
 // resemble.outputSettings({
 //     largeImageThreshold: 0
 // });
 
-// --- BINDINGS ---
-app.use(bodyParser.urlencoded({extended:false}));
-app.use(bodyParser.json());
 // app.use(session({secret: 'photosafe',
 // 				 saveUninitialized: true,
 // 				 resave: true}));
@@ -126,20 +129,20 @@ app.get('/login/callback', passport.authenticate('google', {failureRedirect: '/l
 });
 
 // blacklist
-app.post('/blacklist/add/url', addUrlToBlacklistHandler);
-app.post('/blacklist/add/img', upload.single('image_file'), addImageFileToBlacklistHandler);
 app.get('/blacklist/keys', getAllBlacklistKeysHandler);
-app.get('/blacklist/img/info', getBlacklistImageInfoHandler);
-app.post('/blacklist/img/edit', editBlacklistImageHandler);
-app.post('/blacklist/img/delete', deleteBlacklistImageHandler);
 app.get('/blacklist/img', getBlacklistImageFileHandler);
+app.get('/blacklist/img/info', getBlacklistImageInfoHandler);
+app.post('/blacklist/add/url', urlEncodedBody, addUrlToBlacklistHandler);
+app.post('/blacklist/add/img', imageFileBody, addImageFileToBlacklistHandler);
+app.post('/blacklist/img/edit', urlEncodedBody, editBlacklistImageHandler);
+app.post('/blacklist/img/delete', urlEncodedBody, deleteBlacklistImageHandler);
 
 // compare
-app.post('/compare', compareHandler);
+app.post('/compare', urlEncodedBody, compareHandler);
 
 // settings
 app.get('/settings', getSettingsHandler);
-app.post('/settings/update', updateSettingsHandler);
+app.post('/settings/update', jsonBody, updateSettingsHandler);
 
 // --- HANDLERS ---
 
@@ -152,6 +155,7 @@ function rootHandler(request, response) {
 // for POST 'blacklist/add/img?auth_token=asdasd'
 // blacklists the image file as uploaded
 function addImageFileToBlacklistHandler(request, response) {
+    console.log(request.file);
     var authToken = request.query.auth_token;
     var file = request.file;
     
@@ -167,11 +171,14 @@ function addImageFileToBlacklistHandler(request, response) {
         return;
     }
     
-    var imageKey = addImageFileToBlacklist(file);
-    var data = {image_key:imageKey};
-    var responseObj = createResponseObj('success', data);
-    response.json(responseObj);
-    return;
+    var userId = getUserIdFromAuthToken(authToken);
+    addImageFileToBlacklist(userId, file, response);
+    
+    // var imageKey = addImageFileToBlacklist(file);
+    // var data = {image_key:imageKey};
+    // var responseObj = createResponseObj('success', data);
+    // response.json(responseObj);
+    // return;
 }
 
 function editBlacklistImageHandler(request, response) {
@@ -409,6 +416,20 @@ function getAllBlacklistKeysHandler(request, response) {
 
 // --- HELPER FUNCTIONS ---
 
+function addImageFileToBlacklist(userId, file, apiResponse) {
+    // resize and move the temp file to the uploads directory
+    var sourceFilepath = file.path;
+    var fileExtension = getImageFileExtension(sourceFilepath);
+    var destFilename = createTemporaryFilename() + "." + fileExtension;
+    var destFilepath = 'uploads/' + destFilename;
+    console.log(destFilepath);
+    // resize image
+    sharp(sourceFilepath).resize(500).toFile(destFilepath).then(function() {    
+        // add to blacklist
+        addFileToBlacklist(destFilename, userId, apiResponse);
+    });
+}
+
 function getUserBlacklistKeys(userId, apiResponse) {
     var query = "SELECT imageKey FROM images WHERE userID = ?";
     var args = [userId];
@@ -504,7 +525,7 @@ function downloadAndAddToBlacklist(imageUrl, userId, apiResponse) {
     // write the image to file, without extension
     ensureDirectorySync('uploads');
     var tempFilename = createTemporaryFilename();
-    var downloadedFilepath = 'uploads/' + tempFilename;
+    var downloadedFilepath = 'uploads/tmp/' + tempFilename;
     var downloadedFile = fs.createWriteStream(downloadedFilepath);
     imageDownload.pipe(downloadedFile);
     
@@ -522,21 +543,22 @@ function downloadAndAddToBlacklist(imageUrl, userId, apiResponse) {
             
         // rename the downloaded file to its proper extension
         var fileExtension = getImageFileExtension(downloadedFilepath);
-        var downloadedFilepathExt = downloadedFilepath + "." + fileExtension;
-        var downloadedFilenameExt = tempFilename + "." + fileExtension;
-        // fs.renameSync(downloadedFilepath, downloadedFilepathExt);
-        console.log(downloadedFilepathExt);
+        var destFilename = tempFilename + "." + fileExtension;
+        var destFilepath = "uploads/" + destFilename;
+        console.log(destFilepath);
         
         // resize image
-        sharp(downloadedFilepath).resize(500).toFile(downloadedFilepathExt).then(function() {    
+        sharp(downloadedFilepath).resize(500).toFile(destFilepath).then(function() {    
             // add to blacklist
-            addUrlToBlacklist(downloadedFilenameExt, userId, apiResponse);
+            addFileToBlacklist(destFilename, userId, apiResponse);
         });
     });
+    
+    // downloadedFile.end();
 }
 
 // add url to blacklist in database
-function addUrlToBlacklist(downloadedFilename, userId, apiResponse) {
+function addFileToBlacklist(downloadedFilename, userId, apiResponse) {
     var query = 'INSERT INTO images (userID, filename) VALUES (?, ?);';
     var args = [userId, downloadedFilename];
     // insert into db
@@ -602,6 +624,8 @@ function downloadAndCompare(imageUrl, username, apiResponse) {
         // compare
         compare(downloadedFilepathExt, username, apiResponse);
     });
+    
+    // downloadedFile.end();
 }
 
 // compares the given image (at the path) to the username's blacklist
@@ -685,12 +709,7 @@ function getResizedFilePath(filepath) {
 
 // creates a random filename 
 function createTemporaryFilename() {
-    return 'tempfile' + getRandomInt(0, 100000000);
-}
-
-// generates a random integer in a range
-function getRandomInt(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
+    return 'tempfile' + shortid.generate() + Date.now();
 }
 
 // returns the proper file extension of the file
@@ -774,11 +793,6 @@ function deleteImageAndSendResponse(imageKey, userId, apiResponse) {
         apiResponse.json(responseObj);
         return;
     });
-}
-
-// TODO implement add image file to blacklist
-function addImageFileToBlacklist(file) {
-    return 'image-key-af8163d7e9a999';
 }
 
 // TODO check if image key is valid
