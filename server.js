@@ -136,6 +136,7 @@ app.get('/profile', isLoggedIn, function(request, response){
 
 // login
 app.get('/login', passport.authenticate('google', { scope: ['profile', 'email'] }));
+
 app.get('/login/callback', passport.authenticate('google', {successRedirect: '/profile', failureRedirect: '/login'}));
 
 //logout
@@ -428,6 +429,7 @@ function getBlacklistImageFileHandler(request, response) {
 // for GET '/blacklist/keys?auth_token=asdad'
 // gets all the keys in the user's blacklist
 function getAllBlacklistKeysHandler(request, response) {
+    console.log(request.session);
     var authToken = request.session.passport.user.auth_token;
     
     if (!isValidAuthToken(authToken)) {
@@ -936,7 +938,7 @@ function isValidAuthToken(authToken) {
 
 // TODO replace with actual get
 function getUserIdFromAuthToken(authToken) {
-    if (isValidAuthToken(auth_token)) {
+    if (isValidAuthToken(authToken)) {
         return session.user_id;
     }
     return 'test_user';
