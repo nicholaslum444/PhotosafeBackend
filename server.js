@@ -33,6 +33,12 @@ connection.query('CREATE TABLE IF NOT EXISTS keywords (imageKey INT, keyword VAR
 
 // multer for handling file uploads
 var multer = require('multer');
+var upload = multer({ 'dest': __dirname + '/uploads/tmp' });
+
+// request body handling
+var urlEncodedBody = bodyParser.urlencoded({limit:IMAGE_SIZE_LIMIT, extended:false})
+var jsonBody = bodyParser.json({limit:IMAGE_SIZE_LIMIT})
+var imageFileBody = upload.single('image_file');
 
 // resemble.js
 var resemble = require('node-resemble-js');
@@ -48,41 +54,35 @@ var fs = require('fs');
 var readChunk = require('read-chunk');
 var fileType = require('file-type');
 
+// for creating unique filenames
+var shortid = require('shortid');
+
 // --- BINDINGS ---
 
 var app = express();
 exports.app = app;
-app.use(bodyParser.urlencoded({limit:IMAGE_SIZE_LIMIT, extended:true}));
-app.use(bodyParser.json({limit:IMAGE_SIZE_LIMIT}));
-
-var upload = multer({ 'dest': __dirname + '/uploads/tmp' });
+// console.log(upload.single('asd'));
 
 // resemble.outputSettings({
 //     largeImageThreshold: 0
 // });
 
-// --- BINDINGS ---
-app.use(bodyParser.urlencoded({extended:false}));
-app.use(bodyParser.json());
 app.use(session({secret: 'photosafe',
 				 saveUninitialized: true,
 				 resave: true}));
 app.use(passport.initialize());
 app.use(passport.session());
 
-// var CLIENT_ID = '252949635913-31l4et5ap2gcbfg3dqhp4jf807cppcel.apps.googleusercontent.com';
-// var CLIENT_SECRET = 'WUE6Wj1A50ZtqMfnq01OVGIq';
-// var REDIRECT_URL = 'http://api.photosafe.tk:1881/login/callback';
-
 passport.use(new GoogleStrategy({
     clientID: config.oauth.client_id,
     clientSecret: config.oauth.client_secret,
     callbackURL: config.oauth.redirect_url,
-  	},
-  	function(accessToken, refreshToken, profile, done) {
-        var q = 'SELECT * FROM users WHERE userID=?;'
-      	connection.query(q, [profile.id], function (error, result) {
-  			if (error) {
+    },
+    function(accessToken, refreshToken, profile, done) {
+        var q = 'SELECT * FROM users WHERE userID=?;';
+        var args = [profile.id];
+        connection.query(q, args, function (error, result) {
+            if (error) {
                 console.log(error);
                 return done(error);
             } 
@@ -97,7 +97,7 @@ passport.use(new GoogleStrategy({
                 connection.query(insert, [profile.id, userInfo.user_firstname, userInfo.user_email]);
                 return done(null, userInfo);
             }
-	   });
+       });
     })
 );
 
@@ -115,62 +115,55 @@ passport.deserializeUser(function(user, done) {
 app.get('/', rootHandler);
 
 app.get('/profile', isLoggedIn, function(request, response){
-        var auth_token = request.user.auth_token;
-        var user_firstname = request.user.user_firstname;
-        var user_email = request.user.user_email;
-        response.writeHead(200, {'Content-Type': 'text/html'});
-        response.write('<p>Please wait...</p>');
-        response.write('<span id="auth_token" style="display:none">' + auth_token + '</span>');
-        response.write('<span id="user_firstname" style="display:none">' + user_firstname + '</span>');
-        response.write('<span id="user_email" style="display:none">' + user_email + '</span>');
-        response.end();
-    });
+    var auth_token = request.user.auth_token;
+    var user_firstname = request.user.user_firstname;
+    var user_email = request.user.user_email;
+    response.writeHead(200, {'Content-Type': 'text/html'});
+    response.write('<p>Please wait...</p>');
+    response.write('<span id="auth_token" style="display:none">' + auth_token + '</span>');
+    response.write('<span id="user_firstname" style="display:none">' + user_firstname + '</span>');
+    response.write('<span id="user_email" style="display:none">' + user_email + '</span>');
+    response.end();
+});
 
 // login
 app.get('/login', passport.authenticate('google', { scope: ['profile', 'email'] }));
 app.get('/login/callback', passport.authenticate('google', {successRedirect: '/profile', failureRedirect: '/login'}));
 
+//logout
 app.get('/logout', function(request, response){
     request.logout();
     response.redirect('/');
 })
 
 // blacklist
-app.post('/blacklist/add/url', addUrlToBlacklistHandler);
-app.post('/blacklist/add/img', upload.single('image_file'), addImageFileToBlacklistHandler);
 app.get('/blacklist/keys', getAllBlacklistKeysHandler);
-app.get('/blacklist/img/info', getBlacklistImageInfoHandler);
-app.post('/blacklist/img/edit', editBlacklistImageHandler);
-app.post('/blacklist/img/delete', deleteBlacklistImageHandler);
 app.get('/blacklist/img', getBlacklistImageFileHandler);
+app.get('/blacklist/img/info', getBlacklistImageInfoHandler);
+app.post('/blacklist/add/url', urlEncodedBody, addUrlToBlacklistHandler);
+app.post('/blacklist/add/img', imageFileBody, addImageFileToBlacklistHandler);
+app.post('/blacklist/img/edit', jsonBody, editBlacklistImageHandler);
+app.post('/blacklist/img/delete', urlEncodedBody, deleteBlacklistImageHandler);
 
 // compare
-app.post('/compare', compareHandler);
+app.post('/compare', urlEncodedBody, compareHandler);
 
 // settings
 app.get('/settings', getSettingsHandler);
-app.post('/settings/update', updateSettingsHandler);
+app.post('/settings/update', jsonBody, updateSettingsHandler);
 
 // --- HANDLERS ---
 
 // root
 function rootHandler(request, response) {
-    response.json(['you', 'should not be here',1,2,3,5]);
+    response.json(['you', 'should not be here',1,2,3,4]);
     return;
-}
-
-//verify user is logged in
-function isLoggedIn(request, response, next) {
-    if(request.isAuthenticated()){
-        return next();
-    }
-
-    response.redirect('/login');
 }
 
 // for POST 'blacklist/add/img?auth_token=asdasd'
 // blacklists the image file as uploaded
 function addImageFileToBlacklistHandler(request, response) {
+    console.log(request.file);
     var authToken = request.query.auth_token;
     var file = request.file;
     
@@ -186,11 +179,14 @@ function addImageFileToBlacklistHandler(request, response) {
         return;
     }
     
-    var imageKey = addImageFileToBlacklist(file);
-    var data = {image_key:imageKey};
-    var responseObj = createResponseObj('success', data);
-    response.json(responseObj);
-    return;
+    var userId = getUserIdFromAuthToken(authToken);
+    addImageFileToBlacklist(userId, file, response);
+    
+    // var imageKey = addImageFileToBlacklist(file);
+    // var data = {image_key:imageKey};
+    // var responseObj = createResponseObj('success', data);
+    // response.json(responseObj);
+    // return;
 }
 
 function editBlacklistImageHandler(request, response) {
@@ -217,16 +213,24 @@ function editBlacklistImageHandler(request, response) {
         return;
     }
     
-    var editSuccessful = editImage(imageKey, imageInfo);
-    if (!editSuccessful) {
-        var responseObj = createResponseObj('fail', null, {code:500, message:'edit failed'})
+    if (!isValidImageInfo(imageInfo)) {
+        var responseObj = createResponseObj('fail', null, {code:404, message:'image info not valid'})
         response.json(responseObj);
         return;
     }
     
-    var responseObj = createResponseObj('success', editSuccessful);
-    response.json(responseObj);
-    return;
+    editImageAndSendResponse(imageKey, imageInfo, response);
+    
+    // var editSuccessful = editImage(imageKey, imageInfo);
+    // if (!editSuccessful) {
+    //     var responseObj = createResponseObj('fail', null, {code:500, message:'edit failed'})
+    //     response.json(responseObj);
+    //     return;
+    // }
+    // 
+    // var responseObj = createResponseObj('success', editSuccessful);
+    // response.json(responseObj);
+    // return;
 }
 
 function deleteBlacklistImageHandler(request, response) {
@@ -252,16 +256,16 @@ function deleteBlacklistImageHandler(request, response) {
         return;
     }
     
-    var deleteSuccessful = deleteImage(imageKey);
-    if (!deleteSuccessful) {
-        var responseObj = createResponseObj('fail', null, {code:500, message:'delete failed'})
-        response.json(responseObj);
-        return;
-    }
-    
-    var responseObj = createResponseObj('success', deleteSuccessful);
-    response.json(responseObj);
-    return;
+    deleteImageAndSendResponse(imageKey, userId, response);
+    // if (!deleteSuccessful) {
+    //     var responseObj = createResponseObj('fail', null, {code:500, message:'delete failed'})
+    //     response.json(responseObj);
+    //     return;
+    // }
+    // 
+    // var responseObj = createResponseObj('success', deleteSuccessful);
+    // response.json(responseObj);
+    // return;
 }
 
 function getBlacklistImageInfoHandler(request, response) {
@@ -287,16 +291,19 @@ function getBlacklistImageInfoHandler(request, response) {
         return;
     }
     
-    var imageInfo = getImageInfo(imageKey);
-    var responseObj = createResponseObj('success', imageInfo);
-    response.json(responseObj);
-    return;
+    getImageInfo(imageKey, response);
+    
+    // var imageInfo = getImageInfo(imageKey);
+    // var responseObj = createResponseObj('success', imageInfo);
+    // response.json(responseObj);
+    // return;
 }
 
 function compareHandler(request, response) {
     var authToken = request.query.auth_token;
     var imageUrl = request.body.image_url;
-    //console.log(request);
+    console.log("comparing " + imageUrl);
+    
     if (!isValidAuthToken(authToken)) {
         var responseObj = createResponseObj('fail', null, {code:401, message:'auth token not valid'})
         response.json(responseObj);
@@ -368,7 +375,7 @@ function addUrlToBlacklistHandler(request, response) {
     }
     
     if (!isValidUrl(imageUrl)) {
-        var responseObj = createResponseObj('fail', null, {code:500, message:'not a valid url'})
+        var responseObj = createResponseObj('fail', null, {code:500, message:'not a valid url: '})
         response.json(responseObj);
         return;
     }
@@ -419,7 +426,7 @@ function getAllBlacklistKeysHandler(request, response) {
     }
     
     var userId = getUserIdFromAuthToken(authToken);
-    getUserBlacklistKeys(userId, response, sendSuccessResponse(response));
+    getUserBlacklistKeys(userId, response);
     // var responseObj = createResponseObj('success', userBlacklistKeys);
     // response.json(responseObj);
     // return;
@@ -436,8 +443,87 @@ function isLoggedIn(request, response, next) {
     response.redirect('/login');
 }
 
-// TODO implement get blacklist of user
-function getUserBlacklistKeys(userId, response, callback) {
+function getImageInfo(imageKey, apiResponse) {
+    var keywords = [];
+    var query = "SELECT keyword FROM keywords WHERE imageKey = ?;";
+    var args = [imageKey];
+    connection.query(query, args, function(error, result) {
+        if (error) {
+            console.log(error)
+            return sendFailResponse(apiResponse, null, error);
+        }
+        
+        console.log("delete keywords of " + imageKey);
+        console.log(result);
+        result.forEach(function(keyword) {
+            keywords.push(keyword.keyword);
+        });
+        
+        console.log(keywords);
+        sendSuccessResponse(apiResponse, {image_key: imageKey, image_keywords: keywords});
+    });
+}
+
+function editImageAndSendResponse(imageKey, imageInfo, apiResponse) {
+    console.log(imageKey);
+    console.log(imageInfo);
+    // replace all entries of imagekey in keywords db with new keywords
+    // first delete all imagekey entries
+    var query = "DELETE FROM keywords WHERE imageKey = ?;";
+    var args = [imageKey];
+    // insert into db
+    connection.query(query, args, function(error, result) {
+        if (error) {
+            console.log(error)
+            return sendFailResponse(apiResponse, null, error);
+        }
+        
+        console.log("delete keywords of " + imageKey);
+        console.log(result);
+        
+        // if no keywords then end
+        if (imageInfo.image_keywords.length === 0) {
+            sendSuccessResponse(apiResponse, "No keywords added");
+            return;
+        }
+            
+        // now reinsert each keyword as one entry
+        var query = "INSERT INTO keywords (imageKey, keyword) VALUES ?";
+        var args = [];
+        imageInfo.image_keywords.forEach(function(keyword) {
+            args.push([imageKey, keyword]);
+        });
+        connection.query(query, [args], function(error, result) {
+            if (error) {
+                console.log(error);
+                console.log(args);
+                return sendFailResponse(apiResponse, null, error);
+            }
+            
+            console.log("insert new keywords of " + imageKey);
+            console.log(result);
+            
+            sendSuccessResponse(apiResponse, result.message);
+            return;
+        });
+    });
+}
+
+function addImageFileToBlacklist(userId, file, apiResponse) {
+    // resize and move the temp file to the uploads directory
+    var sourceFilepath = file.path;
+    var fileExtension = getImageFileExtension(sourceFilepath);
+    var destFilename = createTemporaryFilename() + "." + fileExtension;
+    var destFilepath = 'uploads/' + destFilename;
+    console.log(destFilepath);
+    // resize image
+    sharp(sourceFilepath).resize(500).toFile(destFilepath).then(function() {    
+        // add to blacklist
+        addFileToBlacklist(destFilename, userId, apiResponse);
+    });
+}
+
+function getUserBlacklistKeys(userId, apiResponse) {
     var query = "SELECT imageKey FROM images WHERE userID = ?";
     var args = [userId];
     // insert into db
@@ -447,14 +533,14 @@ function getUserBlacklistKeys(userId, response, callback) {
             return sendFailResponse(apiResponse, null, error);
         }
         
-        console.log(result);
         console.log("db query for " + userId);
+        console.log(result);
         var imageKeys = [];
         result.forEach(function(e) {
             imageKeys.push(e.imageKey);
         });
-        console.log(imageKeys);
-        callback(imageKeys);
+        // console.log(imageKeys);
+        sendSuccessResponse(apiResponse, imageKeys);
         return;
     });
 }
@@ -482,15 +568,6 @@ function getUserBlacklistPaths(userId, response, callback) {
     });
 }
 
-function sendSuccessResponse(response) {
-    return function(data) {
-        console.log(data);
-        var responseObj = createResponseObj('success', data);
-        response.json(responseObj);
-        return;
-    }
-}
-
 // gets filepath by image key
 function getFilepathFromImageKey(imageKey, apiResponse) {
     var query = "SELECT filename FROM images WHERE imageKey = ?";
@@ -502,8 +579,13 @@ function getFilepathFromImageKey(imageKey, apiResponse) {
             return sendFailResponse(apiResponse, null, error);
         }
         
-        console.log(result[0].filename);
         console.log("db query for " + imageKey);
+        if (result.length === 0) {
+            console.log(result);
+            return sendFailResponse(apiResponse, null, "No image associated with image key " + imageKey);
+        }
+        
+        console.log(result[0].filename);
         
         // return image key in response 
         var filename = result[0].filename;
@@ -525,6 +607,7 @@ function downloadAndAddToBlacklist(imageUrl, userId, apiResponse) {
             console.log('Response status was ' + res.statusCode);
             return sendFailResponse(apiResponse, null, {message:'Response status was ' + res.statusCode});
         }
+        console.log(res);
     });
 
     // check for request errors
@@ -536,7 +619,7 @@ function downloadAndAddToBlacklist(imageUrl, userId, apiResponse) {
     // write the image to file, without extension
     ensureDirectorySync('uploads');
     var tempFilename = createTemporaryFilename();
-    var downloadedFilepath = 'uploads/' + tempFilename;
+    var downloadedFilepath = 'uploads/tmp/' + tempFilename;
     var downloadedFile = fs.createWriteStream(downloadedFilepath);
     imageDownload.pipe(downloadedFile);
     
@@ -549,26 +632,27 @@ function downloadAndAddToBlacklist(imageUrl, userId, apiResponse) {
     
     // carry out comparision if no errors
     downloadedFile.on('finish', function() {
-        // close the stream
-        downloadedFile.close()
             
         // rename the downloaded file to its proper extension
         var fileExtension = getImageFileExtension(downloadedFilepath);
-        var downloadedFilepathExt = downloadedFilepath + "." + fileExtension;
-        var downloadedFilenameExt = tempFilename + "." + fileExtension;
-        // fs.renameSync(downloadedFilepath, downloadedFilepathExt);
-        console.log(downloadedFilepathExt);
+        var destFilename = tempFilename + "." + fileExtension;
+        var destFilepath = "uploads/" + destFilename;
+        console.log(destFilepath);
         
         // resize image
-        sharp(downloadedFilepath).resize(500).toFile(downloadedFilepathExt).then(function() {    
+        sharp(downloadedFilepath).resize(500).toFile(destFilepath).then(function() {    
             // add to blacklist
-            addUrlToBlacklist(downloadedFilenameExt, userId, apiResponse);
+            addFileToBlacklist(destFilename, userId, apiResponse);
         });
+        // close the stream
+        downloadedFile.close()
     });
+    
+    // downloadedFile.end();
 }
 
 // add url to blacklist in database
-function addUrlToBlacklist(downloadedFilename, userId, apiResponse) {
+function addFileToBlacklist(downloadedFilename, userId, apiResponse) {
     var query = 'INSERT INTO images (userID, filename) VALUES (?, ?);';
     var args = [userId, downloadedFilename];
     // insert into db
@@ -578,8 +662,8 @@ function addUrlToBlacklist(downloadedFilename, userId, apiResponse) {
             return sendFailResponse(apiResponse, null, error);
         }
         
-        console.log(result);
-        console.log("db query for " + downloadedFilename);
+        // console.log(result);
+        // console.log("db query for " + downloadedFilename);
         
         // return image key in response 
         var imageKey = result.insertId;
@@ -605,7 +689,7 @@ function downloadAndCompare(imageUrl, username, apiResponse) {
 
     // check for request errors
     imageDownload.on('error', function (err) {
-        return sendCompareResponse(apiResponse, null, err.message);
+        return sendCompareResponse(apiResponse, null, err);
     });
     
     // write the image to file, without extension
@@ -627,18 +711,24 @@ function downloadAndCompare(imageUrl, username, apiResponse) {
             
         // rename the downloaded file to its proper extension
         var fileExtension = getImageFileExtension(downloadedFilepath);
+        if (fileExtension !== "jpeg" && fileExtension !== "jpg" && fileExtension !== "png") {
+            return sendCompareResponse(apiResponse, null, "unsupported file type: " + fileExtension);
+        }
+        
         var downloadedFilepathExt = downloadedFilepath + "." + fileExtension;
         fs.renameSync(downloadedFilepath, downloadedFilepathExt);
         console.log(downloadedFilepathExt);
         
         // compare
-        compare(downloadedFilepathExt, username, apiResponse);
+        compare(imageUrl, downloadedFilepathExt, username, apiResponse);
     });
+    
+    // downloadedFile.end();
 }
 
 // compares the given image (at the path) to the username's blacklist
 // then returns the response via apiResponse
-function compare(downloadedFilepath, userId, apiResponse) {
+function compare(imageUrl, downloadedFilepath, userId, apiResponse) {
     // get the images to compare against
     getUserBlacklistPaths(userId, apiResponse, function(blacklistImagePaths) {
         // results of the comparisions in promise form
@@ -654,7 +744,7 @@ function compare(downloadedFilepath, userId, apiResponse) {
                 // console.log(result.data);
                 var misMatchPercentage = parseFloat(result.data.misMatchPercentage);
                 var similarity = (100.0 - misMatchPercentage) / 100.0;
-                var similarityInfo = {image_key: result.key, similarity: similarity}
+                var similarityInfo = {image_key: result.key, similarity: similarity, compared: imageUrl}
                 console.log(similarityInfo);
                 return similarityInfo;
             });
@@ -673,21 +763,21 @@ function resemblePromise(downloadedFilepath, imagePath, imageKey) {
     return new Promise(function(resolve, reject) {
         console.log(imagePath);
         
-        // resize images since we can't confirm it's already resized
+        // resize only the downloaded image
         var resizedDownloadedFilePath = getResizedFilePath(downloadedFilepath);
-        var resizedImagePath = getResizedFilePath(imagePath);
+        // var resizedImagePath = getResizedFilePath(imagePath);
         
-        // carry out both resize as promises
+        // carry out resize as promise
         var resizedImages = [];
         resizedImages.push(sharp(downloadedFilepath).resize(500).toFile(resizedDownloadedFilePath));
-        resizedImages.push(sharp(imagePath).resize(500).toFile(resizedImagePath));
+        // resizedImages.push(sharp(imagePath).resize(500).toFile(resizedImagePath));
         console.log(resizedImages);
         
         // compare resized image after promise returns
         Promise.all(resizedImages).then(function(resizedImageResults) {
             console.log(resizedImageResults);
             try {
-                var diff = resemble(resizedDownloadedFilePath).compareTo(resizedImagePath).onComplete(function(data) {
+                var diff = resemble(resizedDownloadedFilePath).compareTo(imagePath).onComplete(function(data) {
                     console.log(data);
                     // return the comparision data
                     resolve({data:data, key:imageKey})
@@ -697,20 +787,6 @@ function resemblePromise(downloadedFilepath, imagePath, imageKey) {
             }
         });
     });
-}
-
-// sends a json response via the response object
-function sendFailResponse(response, similarityInfo, error) {
-    var responseObj = createResponseObj('fail', similarityInfo, error);
-    response.json(responseObj);
-    return;
-}
-
-// sends a json response via the response object
-function sendCompareResponse(response, similarityInfo, error) {
-    var responseObj = createResponseObj('success', similarityInfo);
-    response.json(responseObj);
-    return;
 }
 
 // ensure directory exists
@@ -731,12 +807,7 @@ function getResizedFilePath(filepath) {
 
 // creates a random filename 
 function createTemporaryFilename() {
-    return 'tempfile' + getRandomInt(0, 100000000);
-}
-
-// generates a random integer in a range
-function getRandomInt(min, max) {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
+    return 'tempfile' + shortid.generate() + Date.now();
 }
 
 // returns the proper file extension of the file
@@ -782,73 +853,79 @@ function updateSettings(username, settings) {
     return true;
 }
 
-// TODO implement get image info
-function getImageInfo(imageKey) {
-    var keywords = [];
-    connection.query(
-        'SELECT keyword FROM keywords WHERE imageKey=' + imageKey + ';',
-        function(error, result) {
-            for (var i = 0; i < result.length; i++) {
-                keywords.push(result[i].keyword);
-            }
-        });
-    return {image_keywords: keywords}
+function deleteImageAndSendResponse(imageKey, userId, apiResponse) {
+    console.log("deleting " + imageKey + userId);
+    var query = "DELETE FROM images WHERE userID = ? && imageKey = ?;";
+    var args = [userId, imageKey];
+    // insert into db
+    connection.query(query, args, function(error, result) {
+        if (error) {
+            sendFailResponse(apiResponse, null, error);
+            return;
+        }
+        if (result.affectedRows === 0) {
+            // nothing was deleted
+            sendFailResponse(apiResponse, null, "Nothing was deleted. Please check userID and imageKey");
+            return;
+        }    
+        
+        var responseObj = createResponseObj('success', imageKey);
+        apiResponse.json(responseObj);
+        return;
+    });
 }
 
-// TODO implement edit image, and return success true
-function editImage(imageKey, imageInfo) {
-    return true;
-}
-
-// TODO implement delete image, and return success true
-function deleteImage(imageKey) {
-    return true;
-}
-
-// TODO implement add image file to blacklist
-function addImageFileToBlacklist(file) {
-    return 'image-key-af8163d7e9a999';
+function isValidImageInfo(imageInfo) {
+    if (imageInfo.image_keywords) {
+        if (imageInfo.image_keywords.constructor === Array) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    return false;
 }
 
 // TODO check if image key is valid
 function isValidImageKey(imageKey) {
     if (imageKey) {
         return true;
-    } else {
-        return false;
     }
+    
+    return false;
 }
 
 // TODO check if file is an image
 function isValidImageFile(file) {
     if (file) {
         return true;
-    } else {
-        return false;
     }
+    
+    return false;
 }
 
 // TODO check if url is valid
 function isValidUrl(url) {
     if (url) {
         return true;
-    } else {
-        return false;
     }
+    
+    return false;
 }
 
 // TODO replace with actual validity check
 function isValidAuthToken(authToken) {
     if (authToken) {
         return true;
-    } else {
-        return false;
     }
+    
+    return false;
 }
 
 // TODO replace with actual get
 function getUserIdFromAuthToken(authToken) {
-    return 'some_user_id';
+    return 'test_user';
 }
 
 // creates the response object to be returned in api
@@ -861,6 +938,26 @@ function createResponseObj(status, data, fail) {
         responseObj.fail = fail
     }
     return responseObj;
+}
+
+function sendSuccessResponse(response, data) {
+    var responseObj = createResponseObj('success', data);
+    response.json(responseObj);
+    return;
+}
+
+// sends a json response via the response object
+function sendFailResponse(response, data, error) {
+    var responseObj = createResponseObj('fail', data, error);
+    response.json(responseObj);
+    return;
+}
+
+// sends a json response via the response object
+function sendCompareResponse(response, similarityInfo, error) {
+    var responseObj = createResponseObj('success', similarityInfo);
+    response.json(responseObj);
+    return;
 }
 
 // --- LISTEN ---

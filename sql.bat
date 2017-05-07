@@ -1,1 +1,1 @@
-mysql -u root -h 127.0.0.1 -P 3306 -p
+mysql -u root -h 127.0.0.1 -P 3306 -ppassword
