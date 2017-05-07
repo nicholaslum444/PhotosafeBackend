@@ -590,6 +590,7 @@ function downloadAndAddToBlacklist(imageUrl, userId, apiResponse) {
             console.log('Response status was ' + res.statusCode);
             return sendFailResponse(apiResponse, null, {message:'Response status was ' + res.statusCode});
         }
+        console.log(res);
     });
 
     // check for request errors
@@ -614,8 +615,6 @@ function downloadAndAddToBlacklist(imageUrl, userId, apiResponse) {
     
     // carry out comparision if no errors
     downloadedFile.on('finish', function() {
-        // close the stream
-        downloadedFile.close()
             
         // rename the downloaded file to its proper extension
         var fileExtension = getImageFileExtension(downloadedFilepath);
@@ -628,9 +627,11 @@ function downloadAndAddToBlacklist(imageUrl, userId, apiResponse) {
             // add to blacklist
             addFileToBlacklist(destFilename, userId, apiResponse);
         });
+        // close the stream
+        downloadedFile.close()
     });
     
-    // downloadedFile.end();
+    downloadedFile.end();
 }
 
 // add url to blacklist in database
@@ -702,7 +703,7 @@ function downloadAndCompare(imageUrl, username, apiResponse) {
         console.log(downloadedFilepathExt);
         
         // compare
-        compare(downloadedFilepathExt, username, apiResponse);
+        compare(imageUrl, downloadedFilepathExt, username, apiResponse);
     });
     
     // downloadedFile.end();
@@ -710,7 +711,7 @@ function downloadAndCompare(imageUrl, username, apiResponse) {
 
 // compares the given image (at the path) to the username's blacklist
 // then returns the response via apiResponse
-function compare(downloadedFilepath, userId, apiResponse) {
+function compare(imageUrl, downloadedFilepath, userId, apiResponse) {
     // get the images to compare against
     getUserBlacklistPaths(userId, apiResponse, function(blacklistImagePaths) {
         // results of the comparisions in promise form
@@ -726,7 +727,7 @@ function compare(downloadedFilepath, userId, apiResponse) {
                 // console.log(result.data);
                 var misMatchPercentage = parseFloat(result.data.misMatchPercentage);
                 var similarity = (100.0 - misMatchPercentage) / 100.0;
-                var similarityInfo = {image_key: result.key, similarity: similarity}
+                var similarityInfo = {image_key: result.key, similarity: similarity, compared: imageUrl}
                 console.log(similarityInfo);
                 return similarityInfo;
             });
