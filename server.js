@@ -693,8 +693,8 @@ function downloadAndCompare(imageUrl, username, apiResponse) {
             
         // rename the downloaded file to its proper extension
         var fileExtension = getImageFileExtension(downloadedFilepath);
-        if (fileExtension !== "jpeg" || fileExtension !== "jpg" || fileExtension !== "png") {
-            return sendCompareResponse(apiResponse, null, err.message);
+        if (fileExtension !== "jpeg" && fileExtension !== "jpg" && fileExtension !== "png") {
+            return sendCompareResponse(apiResponse, null, "unsupported file type: " + fileExtension);
         }
         
         var downloadedFilepathExt = downloadedFilepath + "." + fileExtension;
