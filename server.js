@@ -58,6 +58,8 @@ var shortid = require('shortid');
 
 // --- BINDINGS ---
 
+var session_map = {};
+
 var app = express();
 exports.app = app;
 // console.log(upload.single('asd'));
@@ -65,7 +67,6 @@ exports.app = app;
 // resemble.outputSettings({
 //     largeImageThreshold: 0
 // });
-
 app.use(session({secret: 'photosafe',
 				 saveUninitialized: true,
 				 resave: true}));
@@ -122,9 +123,11 @@ app.get('/profile', isLoggedIn, function(request, response){
     var user_firstname = request.user.user_firstname;
     var user_email = request.user.user_email;
 
-    session.auth_token = auth_token;
-    session.user_id = request.user.user_id;
+    request.session.auth_token = auth_token;
+    request.session.user_id = request.user.user_id;
     console.log(request.session);
+
+    session_map[auth_token] = request.user.user_id;
 
     response.writeHead(200, {'Content-Type': 'text/html'});
     response.write('<p>Please wait...</p>');
@@ -141,7 +144,7 @@ app.get('/login/callback', passport.authenticate('google', {successRedirect: '/p
 
 //logout
 app.get('/logout', function(request, response){
-    console.log(request.session);
+    delete session_map[authToken];
     request.logout();
     response.redirect('/');
 })
@@ -174,7 +177,8 @@ function rootHandler(request, response) {
 // blacklists the image file as uploaded
 function addImageFileToBlacklistHandler(request, response) {
     console.log(request.session)
-    var authToken = request.session.passport.user.auth_token;
+    //var authToken = request.session.passport.user.auth_token;
+    var authToken = request.query.auth_token;
     var file = request.file;
     
     if (!isValidAuthToken(authToken)) {
@@ -200,7 +204,7 @@ function addImageFileToBlacklistHandler(request, response) {
 }
 
 function editBlacklistImageHandler(request, response) {
-    var authToken = request.session.passport.user.auth_token;
+    //var authToken = request.session.passport.user.auth_token;
     var imageKey = request.query.image_key;
     var imageInfo = request.body.image_info;
     
@@ -244,7 +248,8 @@ function editBlacklistImageHandler(request, response) {
 }
 
 function deleteBlacklistImageHandler(request, response) {
-    var authToken = request.session.passport.user.auth_token;
+    //var authToken = request.session.passport.user.auth_token;
+    var authToken = request.query.auth_token;
     var imageKey = request.query.image_key;
     
     if (!isValidAuthToken(authToken)) {
@@ -279,7 +284,8 @@ function deleteBlacklistImageHandler(request, response) {
 }
 
 function getBlacklistImageInfoHandler(request, response) {
-    var authToken = request.session.passport.user.auth_token;
+    //var authToken = request.session.passport.user.auth_token;
+    var authToken = request.query.auth_token;
     var imageKey = request.query.image_key;
     
     if (!isValidAuthToken(authToken)) {
@@ -310,7 +316,8 @@ function getBlacklistImageInfoHandler(request, response) {
 }
 
 function compareHandler(request, response) {
-    var authToken = request.session.passport.user.auth_token;
+    //var authToken = request.session.passport.user.auth_token;
+    var authToken = request.query.auth_token;
     var imageUrl = request.body.image_url;
     console.log("comparing " + imageUrl);
     
@@ -334,8 +341,9 @@ function compareHandler(request, response) {
 }
 
 function getSettingsHandler(request, response) {
-    var authToken = request.session.passport.user.auth_token;
-    
+    //var authToken = request.session.passport.user.auth_token;
+    var authToken = request.query.auth_token;
+
     if (!isValidAuthToken(authToken)) {
         var responseObj = createResponseObj('fail', null, {code:401, message:'auth token not valid'})
         response.json(responseObj);
@@ -350,7 +358,8 @@ function getSettingsHandler(request, response) {
 }
 
 function updateSettingsHandler(request, response) {
-    var authToken = request.session.passport.user.auth_token;
+    //var authToken = request.session.passport.user.auth_token;
+    var authToken = request.query.auth_token;
     var settings = request.body.settings;
     
     if (!isValidAuthToken(authToken)) {
@@ -375,7 +384,8 @@ function updateSettingsHandler(request, response) {
 // for POST 'blacklist/add/url?auth_token=asdasd'
 // blacklists the image file at the given url
 function addUrlToBlacklistHandler(request, response) {
-    var authToken = request.session.passport.user.auth_token;
+    //var authToken = request.session.passport.user.auth_token;
+    var authToken = request.query.auth_token;
     var imageUrl = request.body.image_url;
     
     if (!isValidAuthToken(authToken)) {
@@ -397,9 +407,9 @@ function addUrlToBlacklistHandler(request, response) {
 // for GET 'blacklist/img?auth_token=asdasd&image_key=qweqwe'
 // gets the image file that corresponds to the image key
 function getBlacklistImageFileHandler(request, response) {
-    console.log(request);
     //console.log(request.session);
-    var authToken = request.session.passport.user.auth_token;
+    //var authToken = request.session.passport.user.auth_token;
+    var authToken = request.query.auth_token;
     var imageKey = request.query.image_key;
     
     if (!isValidAuthToken(authToken)) {
@@ -429,9 +439,9 @@ function getBlacklistImageFileHandler(request, response) {
 // for GET '/blacklist/keys?auth_token=asdad'
 // gets all the keys in the user's blacklist
 function getAllBlacklistKeysHandler(request, response) {
-    console.log(request.session);
-    var authToken = request.session.passport.user.auth_token;
-    
+    //var authToken = request.session.passport.user.auth_token;
+    var authToken = request.query.auth_token;
+
     if (!isValidAuthToken(authToken)) {
         var responseObj = createResponseObj('fail', null, {code:401, message:'auth token not valid'})
         response.json(responseObj);
@@ -932,10 +942,7 @@ function isValidAuthToken(authToken) {
 
 // TODO replace with actual get
 function getUserIdFromAuthToken(authToken) {
-    if (isValidAuthToken(authToken)) {
-        return session.user_id;
-    }
-    return 'test_user';
+    return session_map[authToken];
 }
 
 // creates the response object to be returned in api
