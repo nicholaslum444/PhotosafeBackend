@@ -648,7 +648,7 @@ function downloadAndAddToBlacklist(imageUrl, userId, apiResponse) {
         downloadedFile.close()
     });
     
-    downloadedFile.end();
+    // downloadedFile.end();
 }
 
 // add url to blacklist in database
