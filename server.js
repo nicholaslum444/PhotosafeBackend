@@ -67,37 +67,39 @@ exports.app = app;
 //     largeImageThreshold: 0
 // });
 
-// app.use(session({secret: 'photosafe',
-// 				 saveUninitialized: true,
-// 				 resave: true}));
+app.use(session({secret: 'photosafe',
+				 saveUninitialized: true,
+				 resave: true}));
 app.use(passport.initialize());
 app.use(passport.session());
-
-// var CLIENT_ID = '252949635913-31l4et5ap2gcbfg3dqhp4jf807cppcel.apps.googleusercontent.com';
-// var CLIENT_SECRET = 'WUE6Wj1A50ZtqMfnq01OVGIq';
-// var REDIRECT_URL = 'http://api.photosafe.tk:1881/login/callback';
 
 passport.use(new GoogleStrategy({
     clientID: config.oauth.client_id,
     clientSecret: config.oauth.client_secret,
-    callbackURL: config.oauth.redirect_url
-  	},
-  	function(token, tokenSecret, profile, done) {
-      	connection.query('SELECT * FROM users WHERE userID=' + profile.id + ';', function (error, result) {
-  			if (error) {
-  				return done(error);
-			  } 
-        console.log(profile.emails[0].value);
-        var userInfo = {auth_token: token, user_firstname: profile.name.givenName, user_email: profile.emails[0].value};
-        if (result) {
-				  return done(null, userInfo);
-			  } else {
-          connection.query('INSERT INTO users (userID, first_name, email) VALUES (' 
-            + profile.id + ', ' + userInfo.first_name + ", " + profile.emails[0].value + ');');
-          return done(null, userInfo);
-        }
-	});
-}));
+    callbackURL: config.oauth.redirect_url,
+    },
+    function(accessToken, refreshToken, profile, done) {
+        var q = 'SELECT * FROM users WHERE userID=?;';
+        var args = [profile.id];
+        connection.query(q, args, function (error, result) {
+            if (error) {
+                console.log(error);
+                return done(error);
+            } 
+            var userInfo = {auth_token: accessToken, 
+                            user_firstname: profile.name.givenName, 
+                            user_email: profile.emails[0].value};
+
+            if (result.length > 0) {
+                return done(null, userInfo);
+            } else {
+                var insert = 'INSERT INTO users (userID, firstName, email) VALUES (?, ?, ?);'
+                connection.query(insert, [profile.id, userInfo.user_firstname, userInfo.user_email]);
+                return done(null, userInfo);
+            }
+       });
+    })
+);
 
 passport.serializeUser(function(user, done) {
     done(null, user);
@@ -112,11 +114,7 @@ passport.deserializeUser(function(user, done) {
 // root
 app.get('/', rootHandler);
 
-// login
-app.get('/login', passport.authenticate('google', { scope: ['profile', 'email'] }));
-app.get('/login/callback', passport.authenticate('google', {failureRedirect: '/login'}), function(request, response) {
-    // res.redirect('/');
-    console.log(request.user);
+app.get('/profile', isLoggedIn, function(request, response){
     var auth_token = request.user.auth_token;
     var user_firstname = request.user.user_firstname;
     var user_email = request.user.user_email;
@@ -127,6 +125,16 @@ app.get('/login/callback', passport.authenticate('google', {failureRedirect: '/l
     response.write('<span id="user_email" style="display:none">' + user_email + '</span>');
     response.end();
 });
+
+// login
+app.get('/login', passport.authenticate('google', { scope: ['profile', 'email'] }));
+app.get('/login/callback', passport.authenticate('google', {successRedirect: '/profile', failureRedirect: '/login'}));
+
+//logout
+app.get('/logout', function(request, response){
+    request.logout();
+    response.redirect('/');
+})
 
 // blacklist
 app.get('/blacklist/keys', getAllBlacklistKeysHandler);
@@ -425,6 +433,15 @@ function getAllBlacklistKeysHandler(request, response) {
 }
 
 // --- HELPER FUNCTIONS ---
+
+//verify user is logged in
+function isLoggedIn(request, response, next) {
+    if(request.isAuthenticated()){
+        return next();
+    }
+
+    response.redirect('/login');
+}
 
 function getImageInfo(imageKey, apiResponse) {
     var keywords = [];
