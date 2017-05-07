@@ -942,7 +942,12 @@ function isValidAuthToken(authToken) {
 
 // TODO replace with actual get
 function getUserIdFromAuthToken(authToken) {
-    return session_map[authToken];
+    var user = session_map[authToken]
+    if (user) {
+        return user;
+    } else {
+        return 'test_user';
+    }
 }
 
 // creates the response object to be returned in api
