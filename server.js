@@ -693,6 +693,10 @@ function downloadAndCompare(imageUrl, username, apiResponse) {
             
         // rename the downloaded file to its proper extension
         var fileExtension = getImageFileExtension(downloadedFilepath);
+        if (fileExtension !== "jpeg" || fileExtension !== "jpg" || fileExtension !== "png") {
+            return sendCompareResponse(apiResponse, null, err.message);
+        }
+        
         var downloadedFilepathExt = downloadedFilepath + "." + fileExtension;
         fs.renameSync(downloadedFilepath, downloadedFilepathExt);
         console.log(downloadedFilepathExt);
