@@ -64,9 +64,9 @@ var upload = multer({ 'dest': __dirname + '/uploads/tmp' });
 // --- BINDINGS ---
 app.use(bodyParser.urlencoded({extended:false}));
 app.use(bodyParser.json());
-// app.use(session({secret: 'photosafe',
-// 				 saveUninitialized: true,
-// 				 resave: true}));
+app.use(session({secret: 'photosafe',
+				 saveUninitialized: true,
+				 resave: true}));
 app.use(passport.initialize());
 app.use(passport.session());
 
@@ -77,24 +77,29 @@ app.use(passport.session());
 passport.use(new GoogleStrategy({
     clientID: config.oauth.client_id,
     clientSecret: config.oauth.client_secret,
-    callbackURL: config.oauth.redirect_url
+    callbackURL: config.oauth.redirect_url,
   	},
-  	function(token, tokenSecret, profile, done) {
-      	connection.query('SELECT * FROM users WHERE userID=' + profile.id + ';', function (error, result) {
+  	function(accessToken, refreshToken, profile, done) {
+        var q = 'SELECT * FROM users WHERE userID=?;'
+      	connection.query(q, [profile.id], function (error, result) {
   			if (error) {
-  				return done(error);
-			  } 
-        console.log(profile.emails[0].value);
-        var userInfo = {auth_token: token, user_firstname: profile.name.givenName, user_email: profile.emails[0].value};
-        if (result) {
-				  return done(null, userInfo);
-			  } else {
-          connection.query('INSERT INTO users (userID, first_name, email) VALUES (' 
-            + profile.id + ', ' + userInfo.first_name + ", " + profile.emails[0].value + ');');
-          return done(null, userInfo);
-        }
-	});
-}));
+                console.log(error);
+                return done(error);
+            } 
+            var userInfo = {auth_token: accessToken, 
+                            user_firstname: profile.name.givenName, 
+                            user_email: profile.emails[0].value};
+
+            if (result.length > 0) {
+                return done(null, userInfo);
+            } else {
+                var insert = 'INSERT INTO users (userID, firstName, email) VALUES (?, ?, ?);'
+                connection.query(insert, [profile.id, userInfo.user_firstname, userInfo.user_email]);
+                return done(null, userInfo);
+            }
+	   });
+    })
+);
 
 passport.serializeUser(function(user, done) {
     done(null, user);
@@ -109,21 +114,26 @@ passport.deserializeUser(function(user, done) {
 // root
 app.get('/', rootHandler);
 
+app.get('/profile', isLoggedIn, function(request, response){
+        var auth_token = request.user.auth_token;
+        var user_firstname = request.user.user_firstname;
+        var user_email = request.user.user_email;
+        response.writeHead(200, {'Content-Type': 'text/html'});
+        response.write('<p>Please wait...</p>');
+        response.write('<span id="auth_token" style="display:none">' + auth_token + '</span>');
+        response.write('<span id="user_firstname" style="display:none">' + user_firstname + '</span>');
+        response.write('<span id="user_email" style="display:none">' + user_email + '</span>');
+        response.end();
+    });
+
 // login
 app.get('/login', passport.authenticate('google', { scope: ['profile', 'email'] }));
-app.get('/login/callback', passport.authenticate('google', {failureRedirect: '/login'}), function(request, response) {
-    // res.redirect('/');
-    console.log(request.user);
-    var auth_token = request.user.auth_token;
-    var user_firstname = request.user.user_firstname;
-    var user_email = request.user.user_email;
-    response.writeHead(200, {'Content-Type': 'text/html'});
-    response.write('<p>Please wait...</p>');
-    response.write('<span id="auth_token" style="display:none">' + auth_token + '</span>');
-    response.write('<span id="user_firstname" style="display:none">' + user_firstname + '</span>');
-    response.write('<span id="user_email" style="display:none">' + user_email + '</span>');
-    response.end();
-});
+app.get('/login/callback', passport.authenticate('google', {successRedirect: '/profile', failureRedirect: '/login'}));
+
+app.get('/logout', function(request, response){
+    request.logout();
+    response.redirect('/');
+})
 
 // blacklist
 app.post('/blacklist/add/url', addUrlToBlacklistHandler);
@@ -145,8 +155,17 @@ app.post('/settings/update', updateSettingsHandler);
 
 // root
 function rootHandler(request, response) {
-    response.json(['you', 'should not be here',1,2,3,4]);
+    response.json(['you', 'should not be here',1,2,3,5]);
     return;
+}
+
+//verify user is logged in
+function isLoggedIn(request, response, next) {
+    if(request.isAuthenticated()){
+        return next();
+    }
+
+    response.redirect('/login');
 }
 
 // for POST 'blacklist/add/img?auth_token=asdasd'
@@ -233,16 +252,16 @@ function deleteBlacklistImageHandler(request, response) {
         return;
     }
     
-    deleteImageAndSendResponse(imageKey, userId, response);
-    // if (!deleteSuccessful) {
-    //     var responseObj = createResponseObj('fail', null, {code:500, message:'delete failed'})
-    //     response.json(responseObj);
-    //     return;
-    // }
-    // 
-    // var responseObj = createResponseObj('success', deleteSuccessful);
-    // response.json(responseObj);
-    // return;
+    var deleteSuccessful = deleteImage(imageKey);
+    if (!deleteSuccessful) {
+        var responseObj = createResponseObj('fail', null, {code:500, message:'delete failed'})
+        response.json(responseObj);
+        return;
+    }
+    
+    var responseObj = createResponseObj('success', deleteSuccessful);
+    response.json(responseObj);
+    return;
 }
 
 function getBlacklistImageInfoHandler(request, response) {
@@ -277,8 +296,7 @@ function getBlacklistImageInfoHandler(request, response) {
 function compareHandler(request, response) {
     var authToken = request.query.auth_token;
     var imageUrl = request.body.image_url;
-    console.log("comparing " + imageUrl);
-    
+    //console.log(request);
     if (!isValidAuthToken(authToken)) {
         var responseObj = createResponseObj('fail', null, {code:401, message:'auth token not valid'})
         response.json(responseObj);
@@ -350,7 +368,7 @@ function addUrlToBlacklistHandler(request, response) {
     }
     
     if (!isValidUrl(imageUrl)) {
-        var responseObj = createResponseObj('fail', null, {code:500, message:'not a valid url: '})
+        var responseObj = createResponseObj('fail', null, {code:500, message:'not a valid url'})
         response.json(responseObj);
         return;
     }
@@ -401,7 +419,7 @@ function getAllBlacklistKeysHandler(request, response) {
     }
     
     var userId = getUserIdFromAuthToken(authToken);
-    getUserBlacklistKeys(userId, response);
+    getUserBlacklistKeys(userId, response, sendSuccessResponse(response));
     // var responseObj = createResponseObj('success', userBlacklistKeys);
     // response.json(responseObj);
     // return;
@@ -409,7 +427,17 @@ function getAllBlacklistKeysHandler(request, response) {
 
 // --- HELPER FUNCTIONS ---
 
-function getUserBlacklistKeys(userId, apiResponse) {
+//verify user is logged in
+function isLoggedIn(request, response, next) {
+    if(request.isAuthenticated()){
+        return next();
+    }
+
+    response.redirect('/login');
+}
+
+// TODO implement get blacklist of user
+function getUserBlacklistKeys(userId, response, callback) {
     var query = "SELECT imageKey FROM images WHERE userID = ?";
     var args = [userId];
     // insert into db
@@ -419,14 +447,14 @@ function getUserBlacklistKeys(userId, apiResponse) {
             return sendFailResponse(apiResponse, null, error);
         }
         
-        console.log("db query for " + userId);
         console.log(result);
+        console.log("db query for " + userId);
         var imageKeys = [];
         result.forEach(function(e) {
             imageKeys.push(e.imageKey);
         });
-        // console.log(imageKeys);
-        sendSuccessResponse(apiResponse, imageKeys);
+        console.log(imageKeys);
+        callback(imageKeys);
         return;
     });
 }
@@ -454,6 +482,15 @@ function getUserBlacklistPaths(userId, response, callback) {
     });
 }
 
+function sendSuccessResponse(response) {
+    return function(data) {
+        console.log(data);
+        var responseObj = createResponseObj('success', data);
+        response.json(responseObj);
+        return;
+    }
+}
+
 // gets filepath by image key
 function getFilepathFromImageKey(imageKey, apiResponse) {
     var query = "SELECT filename FROM images WHERE imageKey = ?";
@@ -465,13 +502,8 @@ function getFilepathFromImageKey(imageKey, apiResponse) {
             return sendFailResponse(apiResponse, null, error);
         }
         
-        console.log("db query for " + imageKey);
-        if (result.length === 0) {
-            console.log(result);
-            return sendFailResponse(apiResponse, null, "No image associated with image key " + imageKey);
-        }
-        
         console.log(result[0].filename);
+        console.log("db query for " + imageKey);
         
         // return image key in response 
         var filename = result[0].filename;
@@ -546,8 +578,8 @@ function addUrlToBlacklist(downloadedFilename, userId, apiResponse) {
             return sendFailResponse(apiResponse, null, error);
         }
         
-        // console.log(result);
-        // console.log("db query for " + downloadedFilename);
+        console.log(result);
+        console.log("db query for " + downloadedFilename);
         
         // return image key in response 
         var imageKey = result.insertId;
@@ -573,7 +605,7 @@ function downloadAndCompare(imageUrl, username, apiResponse) {
 
     // check for request errors
     imageDownload.on('error', function (err) {
-        return sendCompareResponse(apiResponse, null, err);
+        return sendCompareResponse(apiResponse, null, err.message);
     });
     
     // write the image to file, without extension
@@ -641,21 +673,21 @@ function resemblePromise(downloadedFilepath, imagePath, imageKey) {
     return new Promise(function(resolve, reject) {
         console.log(imagePath);
         
-        // resize only the downloaded image
+        // resize images since we can't confirm it's already resized
         var resizedDownloadedFilePath = getResizedFilePath(downloadedFilepath);
-        // var resizedImagePath = getResizedFilePath(imagePath);
+        var resizedImagePath = getResizedFilePath(imagePath);
         
-        // carry out resize as promise
+        // carry out both resize as promises
         var resizedImages = [];
         resizedImages.push(sharp(downloadedFilepath).resize(500).toFile(resizedDownloadedFilePath));
-        // resizedImages.push(sharp(imagePath).resize(500).toFile(resizedImagePath));
+        resizedImages.push(sharp(imagePath).resize(500).toFile(resizedImagePath));
         console.log(resizedImages);
         
         // compare resized image after promise returns
         Promise.all(resizedImages).then(function(resizedImageResults) {
             console.log(resizedImageResults);
             try {
-                var diff = resemble(resizedDownloadedFilePath).compareTo(imagePath).onComplete(function(data) {
+                var diff = resemble(resizedDownloadedFilePath).compareTo(resizedImagePath).onComplete(function(data) {
                     console.log(data);
                     // return the comparision data
                     resolve({data:data, key:imageKey})
@@ -665,6 +697,20 @@ function resemblePromise(downloadedFilepath, imagePath, imageKey) {
             }
         });
     });
+}
+
+// sends a json response via the response object
+function sendFailResponse(response, similarityInfo, error) {
+    var responseObj = createResponseObj('fail', similarityInfo, error);
+    response.json(responseObj);
+    return;
+}
+
+// sends a json response via the response object
+function sendCompareResponse(response, similarityInfo, error) {
+    var responseObj = createResponseObj('success', similarityInfo);
+    response.json(responseObj);
+    return;
 }
 
 // ensure directory exists
@@ -754,26 +800,9 @@ function editImage(imageKey, imageInfo) {
     return true;
 }
 
-function deleteImageAndSendResponse(imageKey, userId, apiResponse) {
-    console.log("deleting " + imageKey + userId);
-    var query = "DELETE FROM images WHERE userID = ? && imageKey = ?;";
-    var args = [userId, imageKey];
-    // insert into db
-    connection.query(query, args, function(error, result) {
-        if (error) {
-            sendFailResponse(apiResponse, null, error);
-            return;
-        }
-        if (result.affectedRows === 0) {
-            // nothing was deleted
-            sendFailResponse(apiResponse, null, "Nothing was deleted. Please check userID and imageKey");
-            return;
-        }    
-        
-        var responseObj = createResponseObj('success', imageKey);
-        apiResponse.json(responseObj);
-        return;
-    });
+// TODO implement delete image, and return success true
+function deleteImage(imageKey) {
+    return true;
 }
 
 // TODO implement add image file to blacklist
@@ -819,7 +848,7 @@ function isValidAuthToken(authToken) {
 
 // TODO replace with actual get
 function getUserIdFromAuthToken(authToken) {
-    return 'test_user';
+    return 'some_user_id';
 }
 
 // creates the response object to be returned in api
@@ -832,26 +861,6 @@ function createResponseObj(status, data, fail) {
         responseObj.fail = fail
     }
     return responseObj;
-}
-
-function sendSuccessResponse(response, data) {
-    var responseObj = createResponseObj('success', data);
-    response.json(responseObj);
-    return;
-}
-
-// sends a json response via the response object
-function sendFailResponse(response, data, error) {
-    var responseObj = createResponseObj('fail', data, error);
-    response.json(responseObj);
-    return;
-}
-
-// sends a json response via the response object
-function sendCompareResponse(response, similarityInfo, error) {
-    var responseObj = createResponseObj('success', similarityInfo);
-    response.json(responseObj);
-    return;
 }
 
 // --- LISTEN ---
