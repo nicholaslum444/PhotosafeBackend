@@ -145,9 +145,8 @@ app.get('/login/callback', passport.authenticate('google', {successRedirect: '/p
 //logout
 app.get('/logout', function(request, response){
     delete session_map[request.query.auth_token];
-    sendSuccessResponse(response, "logged out");
     request.logout();
-    response.redirect('/');
+    sendSuccessResponse(response, "logged out");
 })
 
 // blacklist
