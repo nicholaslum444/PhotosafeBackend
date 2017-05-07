@@ -41,8 +41,9 @@ describe("Blacklist tests", function(done) {
             }
             response.should.have.status(200);
             response.body.should.be.an.instanceOf(Buffer);
-            // TODO implement image comparision
-            done();
+            
+            // write the file to disk for manual inspection
+            saveFile(response, "test/image-key-1-comp.jpg", done);
         });
     });
     
@@ -78,14 +79,9 @@ describe("Blacklist tests", function(done) {
             }
             response.should.have.status(200);
             response.body.should.be.an.instanceOf(Buffer);
-            var imageKey4Compare = fs.createWriteStream("test/image-key-4-comp.jpg");
-            imageKey4Compare.write(response.body);
-            imageKey4Compare.end();
-            imageKey4Compare.on("finish", function() {
-                // retrieved image downloaded and saved.
-                // manually compare the images in the test folder. 
-                done();
-            });
+            
+            // write the file to disk for manual inspection
+            saveFile(response, "test/image-key-4-comp.jpg", done);
         });
     });
     
@@ -101,7 +97,6 @@ describe("Blacklist tests", function(done) {
             response.should.have.status(200);
             response.body.should.have.status("success");
             response.body.data.should.equal("4");
-            // response.body.should.be.an.instanceOf(Buffer);
             done();
         });
     });
@@ -137,19 +132,14 @@ describe("Blacklist tests", function(done) {
             }
             response.should.have.status(200);
             response.body.should.be.an.instanceOf(Buffer);
-            var imageKey5Compare = fs.createWriteStream("test/image-key-5-comp.jpg");
-            imageKey5Compare.write(response.body);
-            imageKey5Compare.end();
-            imageKey5Compare.on("finish", function() {
-                // retrieved image downloaded and saved.
-                // manually compare the images in the test folder. 
-                done();
-            });
+            
+            // write the file to disk for manual inspection
+            saveFile(response, "test/image-key-5-comp.jpg", done);
         });
     });
     
     // compare poster.jpg with http://i.imgur.com/CQVy6Gz.jpg
-    it("Compares image url to the blacklist, should match poster.jpg image key 2", function(done) {
+    it("Compares image url to the blacklist, should match poster.jpg image 2", function(done) {
         this.timeout(10000);
         setTimeout(done, 10000);
         chai.request(server.app)
@@ -164,7 +154,6 @@ describe("Blacklist tests", function(done) {
             // console.log(response);
             response.should.have.status(200);
             response.body.should.have.status("success");
-            console.log(response.body);
             response.body.data[1].image_key.should.equal(2);
             response.body.data[1].similarity.should.be.at.least(0.95);
             done();
@@ -172,7 +161,7 @@ describe("Blacklist tests", function(done) {
     });
     
     // compare http://i2.cdn.turner.com/cnn/2012/images/06/13/2ohio.jpg nothing matches
-    it("Compares image url to the blacklist, should match poster.jpg image key 2", function(done) {
+    it("Compares image url to the blacklist, should not match any", function(done) {
         this.timeout(10000);
         setTimeout(done, 10000);
         chai.request(server.app)
@@ -187,13 +176,82 @@ describe("Blacklist tests", function(done) {
             // console.log(response);
             response.should.have.status(200);
             response.body.should.have.status("success");
-            console.log(response.body);
-            // response.body.data[1].image_key.should.equal(2);
-            // response.body.data[1].similarity.should.be.at.least(0.95);
             response.body.data.forEach(function(result) {
                 result.similarity.should.be.below(0.95);
-            }
+            });
             done();
         });
     });
+    
+    it("Get image info for image 1", function(done) {
+        chai.request(server.app)
+        .get("/blacklist/img/info")
+        .query({auth_token: TEST_AUTH_TOKEN, image_key: 1})
+        // .send({image_info:{image_keywords:["ball", "sports", "soccer", ]}})
+        .end(function(error, response) {
+            if (error) {
+                done(error);
+                return;
+            }
+            // console.log(response);
+            response.should.have.status(200);
+            response.body.should.have.status("success");
+            response.body.data.image_key.should.equal("1");
+            response.body.data.image_keywords.should.have.lengthOf(2);
+            response.body.data.image_keywords.should.contain("soccer");
+            response.body.data.image_keywords.should.contain("sports");
+            done();
+        });
+    });
+    
+    it("Change image info for image 1, adds ball and happy", function(done) {
+        chai.request(server.app)
+        .post("/blacklist/img/edit")
+        .query({auth_token: TEST_AUTH_TOKEN, image_key: 1})
+        .send({image_info:{image_keywords:["ball", "sports", "soccer", "happy"]}})
+        .end(function(error, response) {
+            if (error) {
+                done(error);
+                return;
+            }
+            // console.log(response);
+            response.should.have.status(200);
+            response.body.should.have.status("success");
+            done();
+        });
+    });
+    
+    it("Get image info for image 1 again, with new keywords", function(done) {
+        chai.request(server.app)
+        .get("/blacklist/img/info")
+        .query({auth_token: TEST_AUTH_TOKEN, image_key: 1})
+        // .send({image_info:{image_keywords:["ball", "sports", "soccer", ]}})
+        .end(function(error, response) {
+            if (error) {
+                done(error);
+                return;
+            }
+            // console.log(response);
+            response.should.have.status(200);
+            response.body.should.have.status("success");
+            response.body.data.image_key.should.equal("1");
+            response.body.data.image_keywords.should.have.lengthOf(4);
+            response.body.data.image_keywords.should.contain("soccer");
+            response.body.data.image_keywords.should.contain("sports");
+            response.body.data.image_keywords.should.contain("ball");
+            response.body.data.image_keywords.should.contain("happy");
+            done();
+        });
+    });
+    
 });
+
+// writes file in response.body to disk
+function saveFile(response, filename, done) {
+    var file = fs.createWriteStream(filename);
+    file.write(response.body);
+    file.end();
+    file.on("finish", function() {
+        done();
+    });
+}

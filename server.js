@@ -134,7 +134,7 @@ app.get('/blacklist/img', getBlacklistImageFileHandler);
 app.get('/blacklist/img/info', getBlacklistImageInfoHandler);
 app.post('/blacklist/add/url', urlEncodedBody, addUrlToBlacklistHandler);
 app.post('/blacklist/add/img', imageFileBody, addImageFileToBlacklistHandler);
-app.post('/blacklist/img/edit', urlEncodedBody, editBlacklistImageHandler);
+app.post('/blacklist/img/edit', jsonBody, editBlacklistImageHandler);
 app.post('/blacklist/img/delete', urlEncodedBody, deleteBlacklistImageHandler);
 
 // compare
@@ -205,16 +205,24 @@ function editBlacklistImageHandler(request, response) {
         return;
     }
     
-    var editSuccessful = editImage(imageKey, imageInfo);
-    if (!editSuccessful) {
-        var responseObj = createResponseObj('fail', null, {code:500, message:'edit failed'})
+    if (!isValidImageInfo(imageInfo)) {
+        var responseObj = createResponseObj('fail', null, {code:404, message:'image info not valid'})
         response.json(responseObj);
         return;
     }
     
-    var responseObj = createResponseObj('success', editSuccessful);
-    response.json(responseObj);
-    return;
+    editImageAndSendResponse(imageKey, imageInfo, response);
+    
+    // var editSuccessful = editImage(imageKey, imageInfo);
+    // if (!editSuccessful) {
+    //     var responseObj = createResponseObj('fail', null, {code:500, message:'edit failed'})
+    //     response.json(responseObj);
+    //     return;
+    // }
+    // 
+    // var responseObj = createResponseObj('success', editSuccessful);
+    // response.json(responseObj);
+    // return;
 }
 
 function deleteBlacklistImageHandler(request, response) {
@@ -275,10 +283,12 @@ function getBlacklistImageInfoHandler(request, response) {
         return;
     }
     
-    var imageInfo = getImageInfo(imageKey);
-    var responseObj = createResponseObj('success', imageInfo);
-    response.json(responseObj);
-    return;
+    getImageInfo(imageKey, response);
+    
+    // var imageInfo = getImageInfo(imageKey);
+    // var responseObj = createResponseObj('success', imageInfo);
+    // response.json(responseObj);
+    // return;
 }
 
 function compareHandler(request, response) {
@@ -415,6 +425,72 @@ function getAllBlacklistKeysHandler(request, response) {
 }
 
 // --- HELPER FUNCTIONS ---
+
+function getImageInfo(imageKey, apiResponse) {
+    var keywords = [];
+    var query = "SELECT keyword FROM keywords WHERE imageKey = ?;";
+    var args = [imageKey];
+    connection.query(query, args, function(error, result) {
+        if (error) {
+            console.log(error)
+            return sendFailResponse(apiResponse, null, error);
+        }
+        
+        console.log("delete keywords of " + imageKey);
+        console.log(result);
+        result.forEach(function(keyword) {
+            keywords.push(keyword.keyword);
+        });
+        
+        console.log(keywords);
+        sendSuccessResponse(apiResponse, {image_key: imageKey, image_keywords: keywords});
+    });
+}
+
+function editImageAndSendResponse(imageKey, imageInfo, apiResponse) {
+    console.log(imageKey);
+    console.log(imageInfo);
+    // replace all entries of imagekey in keywords db with new keywords
+    // first delete all imagekey entries
+    var query = "DELETE FROM keywords WHERE imageKey = ?;";
+    var args = [imageKey];
+    // insert into db
+    connection.query(query, args, function(error, result) {
+        if (error) {
+            console.log(error)
+            return sendFailResponse(apiResponse, null, error);
+        }
+        
+        console.log("delete keywords of " + imageKey);
+        console.log(result);
+        
+        // if no keywords then end
+        if (imageInfo.image_keywords.length === 0) {
+            sendSuccessResponse(apiResponse, "No keywords added");
+            return;
+        }
+            
+        // now reinsert each keyword as one entry
+        var query = "INSERT INTO keywords (imageKey, keyword) VALUES ?";
+        var args = [];
+        imageInfo.image_keywords.forEach(function(keyword) {
+            args.push([imageKey, keyword]);
+        });
+        connection.query(query, [args], function(error, result) {
+            if (error) {
+                console.log(error);
+                console.log(args);
+                return sendFailResponse(apiResponse, null, error);
+            }
+            
+            console.log("insert new keywords of " + imageKey);
+            console.log(result);
+            
+            sendSuccessResponse(apiResponse, result.message);
+            return;
+        });
+    });
+}
 
 function addImageFileToBlacklist(userId, file, apiResponse) {
     // resize and move the temp file to the uploads directory
@@ -755,24 +831,6 @@ function updateSettings(username, settings) {
     return true;
 }
 
-// TODO implement get image info
-function getImageInfo(imageKey) {
-    var keywords = [];
-    connection.query(
-        'SELECT keyword FROM keywords WHERE imageKey=' + imageKey + ';',
-        function(error, result) {
-            for (var i = 0; i < result.length; i++) {
-                keywords.push(result[i].keyword);
-            }
-        });
-    return {image_keywords: keywords}
-}
-
-// TODO implement edit image, and return success true
-function editImage(imageKey, imageInfo) {
-    return true;
-}
-
 function deleteImageAndSendResponse(imageKey, userId, apiResponse) {
     console.log("deleting " + imageKey + userId);
     var query = "DELETE FROM images WHERE userID = ? && imageKey = ?;";
@@ -795,40 +853,52 @@ function deleteImageAndSendResponse(imageKey, userId, apiResponse) {
     });
 }
 
+function isValidImageInfo(imageInfo) {
+    if (imageInfo.image_keywords) {
+        if (imageInfo.image_keywords.constructor === Array) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    return false;
+}
+
 // TODO check if image key is valid
 function isValidImageKey(imageKey) {
     if (imageKey) {
         return true;
-    } else {
-        return false;
     }
+    
+    return false;
 }
 
 // TODO check if file is an image
 function isValidImageFile(file) {
     if (file) {
         return true;
-    } else {
-        return false;
     }
+    
+    return false;
 }
 
 // TODO check if url is valid
 function isValidUrl(url) {
     if (url) {
         return true;
-    } else {
-        return false;
     }
+    
+    return false;
 }
 
 // TODO replace with actual validity check
 function isValidAuthToken(authToken) {
     if (authToken) {
         return true;
-    } else {
-        return false;
     }
+    
+    return false;
 }
 
 // TODO replace with actual get
