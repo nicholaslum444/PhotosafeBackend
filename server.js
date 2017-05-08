@@ -125,7 +125,7 @@ app.get('/profile', isLoggedIn, function(request, response){
 
     request.session.auth_token = auth_token;
     request.session.user_id = request.user.user_id;
-    console.log(request.session);
+    // console.log(request.session);
 
     session_map[auth_token] = request.user.user_id;
 
@@ -942,6 +942,7 @@ function isValidAuthToken(authToken) {
 
 // TODO replace with actual get
 function getUserIdFromAuthToken(authToken) {
+    console.log(session_map);
     var user = session_map[authToken]
     if (user) {
         return user;
