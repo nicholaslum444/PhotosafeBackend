@@ -20,7 +20,6 @@ var GoogleStrategy = require('passport-google-oauth').OAuth2Strategy;
 var config = require('./config');
 var mysql = require('mysql');
 var connection = mysql.createConnection({
-  multipleStatements: true,
   host     : config.db.host,
   user     : config.db.user,
   password : config.db.password,
@@ -59,6 +58,8 @@ var shortid = require('shortid');
 
 // --- BINDINGS ---
 
+var session_map = {};
+
 var app = express();
 exports.app = app;
 // console.log(upload.single('asd'));
@@ -66,7 +67,6 @@ exports.app = app;
 // resemble.outputSettings({
 //     largeImageThreshold: 0
 // });
-
 app.use(session({secret: 'photosafe',
 				 saveUninitialized: true,
 				 resave: true}));
@@ -87,6 +87,7 @@ passport.use(new GoogleStrategy({
                 return done(error);
             } 
             var userInfo = {auth_token: accessToken, 
+                            user_id: profile.id,
                             user_firstname: profile.name.givenName, 
                             user_email: profile.emails[0].value};
 
@@ -115,9 +116,19 @@ passport.deserializeUser(function(user, done) {
 app.get('/', rootHandler);
 
 app.get('/profile', isLoggedIn, function(request, response){
+    // console.log(request.session.auth_token);
+    // console.log(request.session.userID);
+
     var auth_token = request.user.auth_token;
     var user_firstname = request.user.user_firstname;
     var user_email = request.user.user_email;
+
+    request.session.auth_token = auth_token;
+    request.session.user_id = request.user.user_id;
+    // console.log(request.session);
+
+    session_map[auth_token] = request.user.user_id;
+
     response.writeHead(200, {'Content-Type': 'text/html'});
     response.write('<p>Please wait...</p>');
     response.write('<span id="auth_token" style="display:none">' + auth_token + '</span>');
@@ -128,12 +139,14 @@ app.get('/profile', isLoggedIn, function(request, response){
 
 // login
 app.get('/login', passport.authenticate('google', { scope: ['profile', 'email'] }));
+
 app.get('/login/callback', passport.authenticate('google', {successRedirect: '/profile', failureRedirect: '/login'}));
 
 //logout
 app.get('/logout', function(request, response){
+    delete session_map[request.query.auth_token];
     request.logout();
-    response.redirect('/');
+    sendSuccessResponse(response, "logged out");
 })
 
 // blacklist
@@ -163,7 +176,8 @@ function rootHandler(request, response) {
 // for POST 'blacklist/add/img?auth_token=asdasd'
 // blacklists the image file as uploaded
 function addImageFileToBlacklistHandler(request, response) {
-    console.log(request.file);
+    console.log(request.session)
+    //var authToken = request.session.passport.user.auth_token;
     var authToken = request.query.auth_token;
     var file = request.file;
     
@@ -190,7 +204,7 @@ function addImageFileToBlacklistHandler(request, response) {
 }
 
 function editBlacklistImageHandler(request, response) {
-    var authToken = request.query.auth_token;
+    //var authToken = request.session.passport.user.auth_token;
     var imageKey = request.query.image_key;
     var imageInfo = request.body.image_info;
     
@@ -234,6 +248,7 @@ function editBlacklistImageHandler(request, response) {
 }
 
 function deleteBlacklistImageHandler(request, response) {
+    //var authToken = request.session.passport.user.auth_token;
     var authToken = request.query.auth_token;
     var imageKey = request.query.image_key;
     
@@ -269,6 +284,7 @@ function deleteBlacklistImageHandler(request, response) {
 }
 
 function getBlacklistImageInfoHandler(request, response) {
+    //var authToken = request.session.passport.user.auth_token;
     var authToken = request.query.auth_token;
     var imageKey = request.query.image_key;
     
@@ -300,6 +316,7 @@ function getBlacklistImageInfoHandler(request, response) {
 }
 
 function compareHandler(request, response) {
+    //var authToken = request.session.passport.user.auth_token;
     var authToken = request.query.auth_token;
     var imageUrl = request.body.image_url;
     console.log("comparing " + imageUrl);
@@ -317,15 +334,16 @@ function compareHandler(request, response) {
     }
     
     var userId = getUserIdFromAuthToken(authToken);
-    downloadAndCompare(imageUrl, userId, response);
+    downloadAndCallback(imageUrl, userId, response, compare);
     // var responseObj = createResponseObj('success', similarityInfo);
     // response.json(responseObj);
     // return;
 }
 
 function getSettingsHandler(request, response) {
+    //var authToken = request.session.passport.user.auth_token;
     var authToken = request.query.auth_token;
-    
+
     if (!isValidAuthToken(authToken)) {
         var responseObj = createResponseObj('fail', null, {code:401, message:'auth token not valid'})
         response.json(responseObj);
@@ -340,6 +358,7 @@ function getSettingsHandler(request, response) {
 }
 
 function updateSettingsHandler(request, response) {
+    //var authToken = request.session.passport.user.auth_token;
     var authToken = request.query.auth_token;
     var settings = request.body.settings;
     
@@ -365,6 +384,7 @@ function updateSettingsHandler(request, response) {
 // for POST 'blacklist/add/url?auth_token=asdasd'
 // blacklists the image file at the given url
 function addUrlToBlacklistHandler(request, response) {
+    //var authToken = request.session.passport.user.auth_token;
     var authToken = request.query.auth_token;
     var imageUrl = request.body.image_url;
     
@@ -381,12 +401,14 @@ function addUrlToBlacklistHandler(request, response) {
     }
     
     var userId = getUserIdFromAuthToken(authToken);
-    downloadAndAddToBlacklist(imageUrl, userId, response);
+    downloadAndCallback(imageUrl, userId, response, addFileToBlacklist);
 }
 
 // for GET 'blacklist/img?auth_token=asdasd&image_key=qweqwe'
 // gets the image file that corresponds to the image key
 function getBlacklistImageFileHandler(request, response) {
+    //console.log(request.session);
+    //var authToken = request.session.passport.user.auth_token;
     var authToken = request.query.auth_token;
     var imageKey = request.query.image_key;
     
@@ -417,8 +439,9 @@ function getBlacklistImageFileHandler(request, response) {
 // for GET '/blacklist/keys?auth_token=asdad'
 // gets all the keys in the user's blacklist
 function getAllBlacklistKeysHandler(request, response) {
+    //var authToken = request.session.passport.user.auth_token;
     var authToken = request.query.auth_token;
-    
+
     if (!isValidAuthToken(authToken)) {
         var responseObj = createResponseObj('fail', null, {code:401, message:'auth token not valid'})
         response.json(responseObj);
@@ -450,7 +473,7 @@ function getImageInfo(imageKey, apiResponse) {
     connection.query(query, args, function(error, result) {
         if (error) {
             console.log(error)
-            return sendFailResponse(apiResponse, null, error);
+            return sendFailResponse(apiResponse, null, {code:500, message:"database error", error:error});
         }
         
         console.log("delete keywords of " + imageKey);
@@ -475,7 +498,7 @@ function editImageAndSendResponse(imageKey, imageInfo, apiResponse) {
     connection.query(query, args, function(error, result) {
         if (error) {
             console.log(error)
-            return sendFailResponse(apiResponse, null, error);
+            return sendFailResponse(apiResponse, null, {code:500, message:"database error", error:error});
         }
         
         console.log("delete keywords of " + imageKey);
@@ -497,7 +520,7 @@ function editImageAndSendResponse(imageKey, imageInfo, apiResponse) {
             if (error) {
                 console.log(error);
                 console.log(args);
-                return sendFailResponse(apiResponse, null, error);
+                return sendFailResponse(apiResponse, null, {code:500, message:"database error", error:error});
             }
             
             console.log("insert new keywords of " + imageKey);
@@ -510,16 +533,23 @@ function editImageAndSendResponse(imageKey, imageInfo, apiResponse) {
 }
 
 function addImageFileToBlacklist(userId, file, apiResponse) {
-    // resize and move the temp file to the uploads directory
     var sourceFilepath = file.path;
     var fileExtension = getImageFileExtension(sourceFilepath);
     var destFilename = createTemporaryFilename() + "." + fileExtension;
     var destFilepath = 'uploads/' + destFilename;
+    console.log("asdassad");
+    console.log(sourceFilepath);
     console.log(destFilepath);
     // resize image
-    sharp(sourceFilepath).resize(500).toFile(destFilepath).then(function() {    
+    sharp(sourceFilepath).resize(500).toFile(destFilepath, function(error, info) {
+        if (error) {
+            sendFailResponse(apiResponse, null, {code:500, message: "Resize failed. File Type not supported: " + fileExtension});
+            return;
+        }
+        
         // add to blacklist
-        addFileToBlacklist(destFilename, userId, apiResponse);
+        console.log('pass');
+        addFileToBlacklist('upload', destFilepath, destFilename, userId, apiResponse);
     });
 }
 
@@ -530,7 +560,7 @@ function getUserBlacklistKeys(userId, apiResponse) {
     connection.query(query, args, function(error, result) {
         if (error) {
             console.log(error)
-            return sendFailResponse(apiResponse, null, error);
+            return sendFailResponse(apiResponse, null, {code:500, message:"database error", error:error});
         }
         
         console.log("db query for " + userId);
@@ -553,7 +583,7 @@ function getUserBlacklistPaths(userId, response, callback) {
     connection.query(query, args, function(error, result) {
         if (error) {
             console.log(error)
-            return sendFailResponse(apiResponse, null, error);
+            return sendFailResponse(apiResponse, null, {code:500, message:"database error", error:error});
         }
         
         console.log(result);
@@ -576,13 +606,13 @@ function getFilepathFromImageKey(imageKey, apiResponse) {
     connection.query(query, args, function(error, result) {
         if (error) {
             console.log(error)
-            return sendFailResponse(apiResponse, null, error);
+            return sendFailResponse(apiResponse, null, {code:500, message:"database error", error:error});
         }
         
         console.log("db query for " + imageKey);
         if (result.length === 0) {
             console.log(result);
-            return sendFailResponse(apiResponse, null, "No image associated with image key " + imageKey);
+            return sendFailResponse(apiResponse, null, {code:404, message:"No image associated with image key " + imageKey});
         }
         
         console.log(result[0].filename);
@@ -597,69 +627,48 @@ function getFilepathFromImageKey(imageKey, apiResponse) {
 }
 
 // downloads and store in blacklist
-function downloadAndAddToBlacklist(imageUrl, userId, apiResponse) {
-    // download image
-    var imageDownload = req.get(imageUrl);
-    
-    // verify response code
-    imageDownload.on('response', function(res) {
-        if (res.statusCode !== 200) {
-            console.log('Response status was ' + res.statusCode);
-            return sendFailResponse(apiResponse, null, {message:'Response status was ' + res.statusCode});
+function downloadAndCallback(imageUrl, userId, apiResponse, callback) {
+    req.get({url:imageUrl, encoding:null, method:'GET'}, function(error, response, body) {
+        if (error) {
+            sendFailResponse(apiResponse, null, {code:404, message:"Unable to access image " + imageUrl});
+            return;
         }
-        console.log(res);
-    });
-
-    // check for request errors
-    imageDownload.on('error', function (err) {
-        console.log(err.message);
-        return sendFailResponse(apiResponse, null, err);
-    });
-    
-    // write the image to file, without extension
-    ensureDirectorySync('uploads');
-    var tempFilename = createTemporaryFilename();
-    var downloadedFilepath = 'uploads/tmp/' + tempFilename;
-    var downloadedFile = fs.createWriteStream(downloadedFilepath);
-    imageDownload.pipe(downloadedFile);
-    
-    // Handle errors
-    downloadedFile.on('error', function(err) {
-        console.log(err.message);
-        fs.unlinkSync(downloadedFilepath);
-        return sendFailResponse(apiResponse, null, err);
-    });
-    
-    // carry out comparision if no errors
-    downloadedFile.on('finish', function() {
-            
-        // rename the downloaded file to its proper extension
-        var fileExtension = getImageFileExtension(downloadedFilepath);
-        var destFilename = tempFilename + "." + fileExtension;
-        var destFilepath = "uploads/" + destFilename;
-        console.log(destFilepath);
         
-        // resize image
-        sharp(downloadedFilepath).resize(500).toFile(destFilepath).then(function() {    
-            // add to blacklist
-            addFileToBlacklist(destFilename, userId, apiResponse);
-        });
-        // close the stream
-        downloadedFile.close()
+        if (body) {
+            ensureDirectorySync('uploads');
+            var tempFilename = createTemporaryFilename();
+            var fileExtension = getImageFileExtension(body);
+            var destFilename = tempFilename + "." + fileExtension;
+            var destFilepath = "uploads/" + destFilename;
+            console.log(destFilepath);
+            // resize image
+            sharp(body).resize(500).toFile(destFilepath, function(error, info) {
+                if (error) {
+                    console.log(error)
+                    sendFailResponse(apiResponse, null, {code:500, message:"Image resize failed. File type not supported: " + imageUrl});
+                    return;
+                }
+                
+                // add to blacklist
+                console.log('resized');
+                callback(imageUrl, destFilepath, destFilename, userId, apiResponse);
+            });
+            return;
+        }
+        
+        return sendFailResponse(apiResponse, null, {code:404, message:"Image retrieval error " + imageUrl});
     });
-    
-    // downloadedFile.end();
 }
 
 // add url to blacklist in database
-function addFileToBlacklist(downloadedFilename, userId, apiResponse) {
+function addFileToBlacklist(imageUrl, downloadedFilepath, downloadedFilename, userId, apiResponse) {
     var query = 'INSERT INTO images (userID, filename) VALUES (?, ?);';
     var args = [userId, downloadedFilename];
     // insert into db
     connection.query(query, args, function(error, result) {
         if (error) {
             console.log(error)
-            return sendFailResponse(apiResponse, null, error);
+            return sendFailResponse(apiResponse, null, {code:500, message:"database error", error:error});
         }
         
         // console.log(result);
@@ -674,61 +683,61 @@ function addFileToBlacklist(downloadedFilename, userId, apiResponse) {
     });
 }
 
-// downloads the image at the url and compares it against the user's blacklist
-// returning the response via apiResponse
-function downloadAndCompare(imageUrl, username, apiResponse) {
-    // download image
-    var imageDownload = req.get(imageUrl);
-    
-    // verify response code
-    imageDownload.on('response', function(res) {
-        if (res.statusCode !== 200) {
-            return sendCompareResponse(apiResponse, null, 'Response status was ' + res.statusCode);
-        }
-    });
-
-    // check for request errors
-    imageDownload.on('error', function (err) {
-        return sendCompareResponse(apiResponse, null, err);
-    });
-    
-    // write the image to file, without extension
-    ensureDirectorySync('compare');
-    var downloadedFilepath = 'compare/' + createTemporaryFilename();
-    var downloadedFile = fs.createWriteStream(downloadedFilepath);
-    imageDownload.pipe(downloadedFile);
-    
-    // Handle errors
-    downloadedFile.on('error', function(err) { 
-        fs.unlinkSync(downloadedFilepath);
-        return sendCompareResponse(apiResponse, null, err.message);
-    });
-    
-    // carry out comparision if no errors
-    downloadedFile.on('finish', function() {
-        // close the stream
-        downloadedFile.close()
-            
-        // rename the downloaded file to its proper extension
-        var fileExtension = getImageFileExtension(downloadedFilepath);
-        if (fileExtension !== "jpeg" && fileExtension !== "jpg" && fileExtension !== "png") {
-            return sendCompareResponse(apiResponse, null, "unsupported file type: " + fileExtension);
-        }
-        
-        var downloadedFilepathExt = downloadedFilepath + "." + fileExtension;
-        fs.renameSync(downloadedFilepath, downloadedFilepathExt);
-        console.log(downloadedFilepathExt);
-        
-        // compare
-        compare(imageUrl, downloadedFilepathExt, username, apiResponse);
-    });
-    
-    // downloadedFile.end();
-}
+// // downloads the image at the url and compares it against the user's blacklist
+// // returning the response via apiResponse
+// function downloadAndCompare(imageUrl, username, apiResponse) {
+//     // download image
+//     var imageDownload = req.get(imageUrl);
+//     
+//     // verify response code
+//     imageDownload.on('response', function(res) {
+//         if (res.statusCode !== 200) {
+//             return sendCompareResponse(apiResponse, null, 'Response status was ' + res.statusCode);
+//         }
+//     });
+// 
+//     // check for request errors
+//     imageDownload.on('error', function (err) {
+//         return sendCompareResponse(apiResponse, null, err);
+//     });
+//     
+//     // write the image to file, without extension
+//     ensureDirectorySync('compare');
+//     var downloadedFilepath = 'compare/' + createTemporaryFilename();
+//     var downloadedFile = fs.createWriteStream(downloadedFilepath);
+//     imageDownload.pipe(downloadedFile);
+//     
+//     // Handle errors
+//     downloadedFile.on('error', function(err) { 
+//         fs.unlinkSync(downloadedFilepath);
+//         return sendCompareResponse(apiResponse, null, err.message);
+//     });
+//     
+//     // carry out comparision if no errors
+//     downloadedFile.on('finish', function() {
+//         // close the stream
+//         downloadedFile.close()
+//             
+//         // rename the downloaded file to its proper extension
+//         var fileExtension = getImageFileExtension(downloadedFilepath);
+//         if (fileExtension !== "jpeg" && fileExtension !== "jpg" && fileExtension !== "png") {
+//             return sendCompareResponse(apiResponse, null, "unsupported file type: " + fileExtension);
+//         }
+//         
+//         var downloadedFilepathExt = downloadedFilepath + "." + fileExtension;
+//         fs.renameSync(downloadedFilepath, downloadedFilepathExt);
+//         console.log(downloadedFilepathExt);
+//         
+//         // compare
+//         compare(imageUrl, downloadedFilepathExt, username, apiResponse);
+//     });
+//     
+//     // downloadedFile.end();
+// }
 
 // compares the given image (at the path) to the username's blacklist
 // then returns the response via apiResponse
-function compare(imageUrl, downloadedFilepath, userId, apiResponse) {
+function compare(imageUrl, downloadedFilepath, downloadedFilename, userId, apiResponse) {
     // get the images to compare against
     getUserBlacklistPaths(userId, apiResponse, function(blacklistImagePaths) {
         // results of the comparisions in promise form
@@ -745,7 +754,7 @@ function compare(imageUrl, downloadedFilepath, userId, apiResponse) {
                 var misMatchPercentage = parseFloat(result.data.misMatchPercentage);
                 var similarity = (100.0 - misMatchPercentage) / 100.0;
                 var similarityInfo = {image_key: result.key, similarity: similarity, compared: imageUrl}
-                console.log(similarityInfo);
+                // console.log(similarityInfo);
                 return similarityInfo;
             });
             console.log(similarityInfos);
@@ -771,11 +780,11 @@ function resemblePromise(downloadedFilepath, imagePath, imageKey) {
         var resizedImages = [];
         resizedImages.push(sharp(downloadedFilepath).resize(500).toFile(resizedDownloadedFilePath));
         // resizedImages.push(sharp(imagePath).resize(500).toFile(resizedImagePath));
-        console.log(resizedImages);
+        // console.log(resizedImages);
         
         // compare resized image after promise returns
         Promise.all(resizedImages).then(function(resizedImageResults) {
-            console.log(resizedImageResults);
+            // console.log(resizedImageResults);
             try {
                 var diff = resemble(resizedDownloadedFilePath).compareTo(imagePath).onComplete(function(data) {
                     console.log(data);
@@ -811,10 +820,18 @@ function createTemporaryFilename() {
 }
 
 // returns the proper file extension of the file
-function getImageFileExtension(imageFilepath) {
-    const buffer = readChunk.sync(imageFilepath, 0, 4100);
-    var ext = fileType(buffer).ext;
-    return ext;
+function getImageFileExtension(buffer) {
+    // console.log(imageFilepath);
+    // var buffer = fs.readFileSync(imageFilepath);
+    // const buffer = readChunk.sync(imageFilepath, 0, 4100);
+    // console.log(buffer);
+    var typeInfo = fileType(buffer);
+    if (typeInfo) {
+        var ext = typeInfo.ext;
+        return ext;
+    }
+    
+    return 'jpg';
 }
 
 // TODO unimplemented it because it's causing problems
@@ -860,12 +877,12 @@ function deleteImageAndSendResponse(imageKey, userId, apiResponse) {
     // insert into db
     connection.query(query, args, function(error, result) {
         if (error) {
-            sendFailResponse(apiResponse, null, error);
+            sendFailResponse(apiResponse, null, {code:500, message:"database error", error:error});
             return;
         }
         if (result.affectedRows === 0) {
             // nothing was deleted
-            sendFailResponse(apiResponse, null, "Nothing was deleted. Please check userID and imageKey");
+            sendFailResponse(apiResponse, null, {code:500, message:"Nothing was deleted. Please check userID and imageKey"});
             return;
         }    
         
@@ -925,7 +942,16 @@ function isValidAuthToken(authToken) {
 
 // TODO replace with actual get
 function getUserIdFromAuthToken(authToken) {
-    return 'test_user';
+    console.log(session_map);
+    console.log(authToken);
+    var user = session_map[authToken]
+    if (user) {
+        console.log(user);
+        return user;
+    } else {
+        console.log("no user found, returning TEST USER");
+        return 'test_user';
+    }
 }
 
 // creates the response object to be returned in api
