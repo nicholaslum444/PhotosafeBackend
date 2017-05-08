@@ -943,10 +943,13 @@ function isValidAuthToken(authToken) {
 // TODO replace with actual get
 function getUserIdFromAuthToken(authToken) {
     console.log(session_map);
+    console.log(authToken);
     var user = session_map[authToken]
     if (user) {
+        console.log(user);
         return user;
     } else {
+        console.log("no user found, returning TEST USER");
         return 'test_user';
     }
 }
